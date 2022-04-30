@@ -120,6 +120,7 @@ class KDHR(torch.nn.Module):
         # S-H图搭建
         # 第一层
         x_SH1 = self.SH_embedding(x_SH.long())
+        # 这里的x_SH2和下边的x_SH22有区别，目前不知道什么原因
         x_SH2 = self.convSH_TostudyS_1(x_SH1.float(), edge_index_SH)
         # 第二层
         x_SH6 = self.convSH_TostudyS_2(x_SH2, edge_index_SH)
