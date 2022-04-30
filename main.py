@@ -96,8 +96,8 @@ for i in range(pLen):
     pH_array[i, k] = 1
 
 # 读取中草药频率
-herbCount = load_obj('./data/herbID2count')
-herbCount = np.array(list(herbCount.values()))
+#herbCount = load_obj('./data/herbID2count')
+#herbCount = np.array(list(herbCount.values()))
 
 # # 读取KG中知识的独热编码
 # kg_oneHot = np.load('./data/herb_805_27_oneHot.npy')

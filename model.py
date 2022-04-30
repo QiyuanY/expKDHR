@@ -66,8 +66,13 @@ class KDHR(torch.nn.Module):
         # s和h的初始表示 0层
         self.S_embedding = torch.nn.Embedding(ss_num, embedding_dim)
         self.H_embedding = torch.nn.Embedding(hh_num, embedding_dim)
-        self.p_embedding = []
-        self.c_embedding = []
+
+        self.p_embedding_0 = []
+        self.p_embedding_1 = []
+
+        self.c_embedding_0 = []
+        self.c_embedding_1 = []
+        self.ssl_temp = 0.1
 
         self.ssl_u, self.ssl_i = [], []
         self.nce_u, self.nce_i = [], []
@@ -134,11 +139,11 @@ class KDHR(torch.nn.Module):
         # 第二层
         x_SH66 = self.convSH_TostudyS_2_h(x_SH22, edge_index_SH)
 
-        self.c_embedding[0] = x_SH66  # 草药
-        self.p_embedding[0] = x_SH11  # 草药
+        self.c_embedding_0 = x_SH66  # 草药
+        self.p_embedding_0 = x_SH11  # 草药
 
-        self.c_embedding[1] = x_SH6  # 症状
-        self.p_embedding[1] = x_SH1  # 症状
+        self.c_embedding_1 = x_SH6  # 症状
+        self.p_embedding_1 = x_SH1  # 症状
 
         # x_SH66 = x_SH66.view(-1, 256)
         # 第三层
@@ -150,24 +155,24 @@ class KDHR(torch.nn.Module):
         # x_SH99 = self.SH_bn_1_h(x_SH99)
         # x_SH99 = self.SH_tanh_1_h(x_SH99)
 
-        # S-S图搭建
-        x_ss0 = self.SH_embedding(x_SS.long())
-        # = self.convSS(x_ss0.float(), edge_index_SS) # S_S图中 s的嵌入
-        x_loss_ss, s_lossemb = self.same2ssl(x_ss0, edge_index_SS)
-        x_ss1 = x_ss0.view(390, -1)
-        # H-H图搭建
-        x_hh0 = self.SH_embedding(x_HH.long())
-        x_hh0 = x_hh0.view(-1, 64)
-        # x_hh0 = torch.cat((x_hh0.float(), kgOneHot), dim=-1)
-        x_loss_hh, h_lossemb = self.same2ssl(x_hh0, edge_index_HH)
-        # x_hh1 = self.convHH(x_hh0.float(), edge_index_HH)  # H_H图中 h的嵌入
-        x_hh1 = x_hh0.view(805, -1)
+        # # S-S图搭建
+        # x_ss0 = self.SH_embedding(x_SS.long())
+        # # = self.convSS(x_ss0.float(), edge_index_SS) # S_S图中 s的嵌入
+        # x_loss_ss, s_lossemb = self.same2ssl(x_ss0, edge_index_SS)
+        # x_ss1 = x_ss0.view(390, -1)
+        # # H-H图搭建
+        # x_hh0 = self.SH_embedding(x_HH.long())
+        # x_hh0 = x_hh0.view(-1, 64)
+        # # x_hh0 = torch.cat((x_hh0.float(), kgOneHot), dim=-1)
+        # x_loss_hh, h_lossemb = self.same2ssl(x_hh0, edge_index_HH)
+        # # x_hh1 = self.convHH(x_hh0.float(), edge_index_HH)  # H_H图中 h的嵌入
+        # x_hh1 = x_hh0.view(805, -1)
 
         # 信息融合
 
         # sum操作
-        es = torch.tensor(self.ssl_i) + s_lossemb
-        eh = torch.tensor(self.ssl_u) + h_lossemb
+        es = torch.tensor(self.ssl_i) #+ s_lossemb
+        eh = torch.tensor(self.ssl_u) #+ h_lossemb
         # es = torch.tensor(self.ssl_i + self.nce_i) + s_lossemb
         # eh = torch.tensor(self.ssl_u + self.nce_u) + h_lossemb
         # cat
@@ -198,11 +203,11 @@ class KDHR(torch.nn.Module):
         return pre
 
     def ssl_layer_loss(self, user=805, item=390):  # KDHR的0层和N层
-        self.c_embedding = torch.tensor(self.c_embedding)
-        self.p_embedding = torch.tensor(self.p_embedding)
+        self.c_embedding_0 = torch.tensor(self.c_embedding_0)
+        self.p_embedding_0 = torch.tensor(self.p_embedding_0)
 
-        current_user_embeddings, current_item_embeddings = self.c_embedding[0], self.c_embedding[1]
-        previous_user_embeddings_all, previous_item_embeddings_all = self.p_embedding[0], self.p_embedding[1]
+        current_user_embeddings, current_item_embeddings = self.c_embedding_0, self.c_embedding_1
+        previous_user_embeddings_all, previous_item_embeddings_all = self.p_embedding_0, self.p_embedding_1
 
         current_user_embeddings = current_user_embeddings[user]
         previous_user_embeddings = previous_user_embeddings_all[user]
@@ -254,10 +259,10 @@ class KDHR(torch.nn.Module):
         return centroids, node2cluster
 
     def e_step(self):
-        user_embeddings = self.c_embedding[0].numpy()
-        item_embeddings = self.c_embedding[1].numpy()
-        # user_embeddings = self.c_embedding[0].weight.detach().cpu().numpy()
-        # item_embeddings = self.c_embedding[1].weight.detach().cpu().numpy()
+        user_embeddings = self.c_embedding_0.numpy()
+        item_embeddings = self.c_embedding_1.numpy()
+        # user_embeddings = self.c_embedding_0.weight.detach().cpu().numpy()
+        # item_embeddings = self.c_embedding_1.weight.detach().cpu().numpy()
         self.user_centroids, self.user_2cluster = self.run_kmeans(user_embeddings)
         self.item_centroids, self.item_2cluster = self.run_kmeans(item_embeddings)
 
@@ -266,7 +271,7 @@ class KDHR(torch.nn.Module):
 
         # self.c_embedding = torch.tensor(self.c_embedding)
         # self.p_embedding = torch.tensor(self.p_embedding)
-        user_embeddings_all, item_embeddings_all = self.c_embedding[0], self.c_embedding[1]
+        user_embeddings_all, item_embeddings_all = self.c_embedding_0, self.c_embedding_1
         # user_embeddings = user_embeddings_all[user]  # [B, e]
         norm_user_embeddings = F.normalize(user_embeddings_all)
 
@@ -298,8 +303,8 @@ class KDHR(torch.nn.Module):
         # if self.restore_user_e is not None or self.restore_item_e is not None:
         #     self.restore_user_e, self.restore_item_e = None, None
 
-        # current_user_embeddings, current_item_embeddings = self.c_embedding[0], self.c_embedding[1]
-        # previous_user_embeddings_all, previous_item_embeddings_all = self.p_embedding[0], self.p_embedding[1]
+        # current_user_embeddings, current_item_embeddings = self.c_embedding_0, self.c_embedding_1
+        # previous_user_embeddings_all, previous_item_embeddings_all = self.p_embedding_0, self.p_embedding_1
         # pos_item = interaction[self.ITEM_ID]
         # neg_item = interaction[self.NEG_ITEM_ID]
 
@@ -334,17 +339,17 @@ class KDHR(torch.nn.Module):
 
         return ssl_loss + nce_loss
 
-    def same2ssl(self, x, index):
-        ssl_loss = 0
-        for i, j in enumerate(index):
-            # x和index是通过Data方法转换后的形式
-            norm_user_emb1, norm_user_emb2 = x[i], x[j]
-
-            pos_score_user = torch.mul(norm_user_emb1, norm_user_emb2).sum(dim=1)
-            ttl_score_user = torch.matmul(norm_user_emb1, self.p_embedding[0][805].transpose(0, 1))
-            pos_score_user = torch.exp(pos_score_user / self.ssl_temp)
-            ttl_score_user = torch.exp(ttl_score_user / self.ssl_temp).sum(dim=1)
-
-            ssl_loss = -torch.log(pos_score_user / ttl_score_user).sum()
-
-        return ssl_loss, x
+    # def same2ssl(self, x, index):
+    #     ssl_loss = 0
+    #     for i, j in enumerate(index):
+    #         # x和index是通过Data方法转换后的形式
+    #         norm_user_emb1, norm_user_emb2 = x[i], x[j]
+    #
+    #         pos_score_user = torch.mul(norm_user_emb1, norm_user_emb2).sum(dim=1)
+    #         ttl_score_user = torch.matmul(norm_user_emb1, self.p_embedding_0[805].transpose(0, 1))
+    #         pos_score_user = torch.exp(pos_score_user / self.ssl_temp)
+    #         ttl_score_user = torch.exp(ttl_score_user / self.ssl_temp).sum(dim=1)
+    #
+    #         ssl_loss = -torch.log(pos_score_user / ttl_score_user).sum()
+    #
+    #     return ssl_loss, x
