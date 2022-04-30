@@ -135,18 +135,16 @@ class KDHR(torch.nn.Module):
         # x_SH9 = self.SH_tanh_1(x_SH9)
 
         # SH H
+        # 0: 草药 1: 症状
         x_SH11 = self.SH_embedding(x_SH.long())
         x_SH22 = self.convSH_TostudyS_1_h(x_SH11.float(), edge_index_SH)
         # 第二层
         x_SH66 = self.convSH_TostudyS_2_h(x_SH22, edge_index_SH)
-
-        self.c_embedding_0 = x_SH66  # 草药
-        self.p_embedding_0 = x_SH11  # 草药
-
-        self.c_embedding_1 = x_SH6  # 症状
-        self.p_embedding_1 = x_SH1  # 症状
-
         # x_SH66 = x_SH66.view(-1, 256)
+        self.p_embedding_0, self.p_embedding_1 = torch.split(x_SH11, [805, 390])
+        self.c_embedding_0, self.c_embedding_1 = torch.split(x_SH6, [805, 390])
+
+        _,s_i,s_u = self.ssl_layer_loss()
         # 第三层
         # x_SH77 = self.convSH_TostudyS_3_h(x_SH66, edge_index_SH)
 
@@ -172,8 +170,8 @@ class KDHR(torch.nn.Module):
         # 信息融合
 
         # sum操作
-        es = torch.tensor(self.ssl_i) #+ s_lossemb
-        eh = torch.tensor(self.ssl_u) #+ h_lossemb
+        es = torch.tensor(s_i) #+ s_lossemb
+        eh = torch.tensor(s_u) #+ h_lossemb
         # es = torch.tensor(self.ssl_i + self.nce_i) + s_lossemb
         # eh = torch.tensor(self.ssl_u + self.nce_u) + h_lossemb
         # cat
@@ -204,19 +202,25 @@ class KDHR(torch.nn.Module):
         return pre
 
     def ssl_layer_loss(self, user=805, item=390):  # KDHR的0层和N层
-        self.c_embedding_0 = torch.tensor(self.c_embedding_0)
-        self.p_embedding_0 = torch.tensor(self.p_embedding_0)
+        # self.c_embedding_0 = torch.tensor(self.c_embedding_0)
+        # self.p_embedding_0 = torch.tensor(self.p_embedding_0)
 
         current_user_embeddings, current_item_embeddings = self.c_embedding_0, self.c_embedding_1
         previous_user_embeddings_all, previous_item_embeddings_all = self.p_embedding_0, self.p_embedding_1
 
-        current_user_embeddings = current_user_embeddings[user]
-        previous_user_embeddings = previous_user_embeddings_all[user]
-        norm_user_emb1 = F.normalize(current_user_embeddings)
-        norm_user_emb2 = F.normalize(previous_user_embeddings)
+        current_item_embeddings = torch.tensor(current_item_embeddings)
+        current_user_embeddings = torch.tensor(current_user_embeddings)
 
-        norm_all_user_emb = F.normalize(previous_user_embeddings_all)
+        current_user_embeddings = current_user_embeddings.view(805, -1)
+        current_item_embeddings = current_item_embeddings.view(390, -1)
 
+        current_user_embeddings = current_user_embeddings[user-1]
+        previous_user_embeddings = previous_user_embeddings_all[user-1]
+        norm_user_emb1 = F.normalize(current_user_embeddings, dim=0)
+        norm_user_emb2 = F.normalize(previous_user_embeddings, dim=0)
+
+        norm_all_user_emb = F.normalize(torch.tensor(previous_user_embeddings_all))
+        print(norm_all_user_emb)
         pos_score_user = torch.mul(norm_user_emb1, norm_user_emb2).sum(dim=1)
         ttl_score_user = torch.matmul(norm_user_emb1, norm_all_user_emb.transpose(0, 1))
         pos_score_user = torch.exp(pos_score_user / self.ssl_temp)
@@ -224,8 +228,8 @@ class KDHR(torch.nn.Module):
 
         ssl_loss_user = -torch.log(pos_score_user / ttl_score_user).sum()
 
-        current_item_embeddings = current_item_embeddings[item]
-        previous_item_embeddings = previous_item_embeddings_all[item]
+        current_item_embeddings = current_item_embeddings[item-1]
+        previous_item_embeddings = previous_item_embeddings_all[item-1]
         norm_item_emb1 = F.normalize(current_item_embeddings)
         norm_item_emb2 = F.normalize(previous_item_embeddings)
 
