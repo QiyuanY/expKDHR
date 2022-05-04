@@ -1,8 +1,8 @@
-# KDHR
+# expKDHR
 
-This repository is the implementation of KDHR:
+This repository is the implementation of expKDHR:
 
-Multi-layer information fusion based on graph convolutional network for knowledge-driven herb recommendation
+Multi-layer information fusion based on graph convolutional network(lightGCN) and Contrastive Learning for knowledge-driven herb recommendation
 
 # Required packages
 
@@ -16,3 +16,4 @@ pandas == 1.0.1
 
 sklearn == 0.22.1
 
+faiss-gpu == 1.7.1
