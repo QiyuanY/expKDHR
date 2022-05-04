@@ -21,7 +21,7 @@ from sklearn.metrics import roc_auc_score
 import types
 from torch_sparse import SparseTensor
 
-seed = 2021
+seed = 202254
 np.random.seed(seed)
 # if torch.cuda.is_available():
     # torch.cuda.manual_seed(seed)
@@ -144,6 +144,7 @@ for epoch in range(para.epoch):
     for i, (sid, hid) in enumerate(train_loader):
         # sid, hid = sid.to(device), hid.to(device)
         sid, hid = sid.float(), hid.float()
+        print(np.argwhere(hid.numpy()>0))
         optimizer.zero_grad()
         # batch*805 概率矩阵
         outputs = model(sh_data.x, sh_data.edge_index, ss_data.x, ss_data.edge_index,

@@ -315,7 +315,7 @@ class KDHR(torch.nn.Module):
 
         user2centroids = self.user_centroids[user2cluster]  # [B, e]
         pos_score_user = torch.mul(norm_user_embeddings, user2centroids).sum(dim=1)
-        pos_score_user = torch.exp(pos_score_user / self.ssl_temp)
+        pos_score_user = torch.exp(pos_score_user / np.float32(self.ssl_temp))
         ttl_score_user = torch.matmul(norm_user_embeddings, self.user_centroids.transpose(0, 1))
         ttl_score_user = torch.exp(ttl_score_user / self.ssl_temp).sum(dim=1)
 
@@ -333,7 +333,7 @@ class KDHR(torch.nn.Module):
         proto_nce_loss_item = -torch.log(pos_score_item / ttl_score_item).sum()
 
         proto_nce_loss = self.proto_reg * (proto_nce_loss_user + proto_nce_loss_item)
-        return proto_nce_loss,norm_item_embeddings, norm_user_embeddings
+        return proto_nce_loss, norm_item_embeddings, norm_user_embeddings
 
     def calculate_loss(self):
         # clear the storage variable when training
