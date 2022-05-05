@@ -23,9 +23,9 @@ from torch_sparse import SparseTensor
 
 seed = 202254
 np.random.seed(seed)
-# if torch.cuda.is_available():
-    # torch.cuda.manual_seed(seed)
-    # torch.cuda.manual_seed_all(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 torch.manual_seed(seed)
 
 class Logger(object):
@@ -39,9 +39,8 @@ class Logger(object):
 
     def flush(self):
         pass
-
-para = parameter.para(lr=3e-4, rec=7e-3, drop=0.0, batchSize=512, epoch=200, dev_ratio=0.2, test_ratio=0.2)
-
+# para = parameter.para(lr=3e-4, rec=7e-3, drop=0.0, batchSize=512, epoch=200, dev_ratio=0.2, test_ratio=0.2)
+para = parameter.para(lr=5e-3, rec=7e-3, drop=0.0, batchSize=1024, epoch=200, dev_ratio=0.2, test_ratio=0.2)
 path = os.path.abspath(os.path.dirname(__file__))
 type = sys.getfilesystemencoding()
 sys.stdout = Logger('khdr.txt')
@@ -144,7 +143,6 @@ for epoch in range(para.epoch):
     for i, (sid, hid) in enumerate(train_loader):
         # sid, hid = sid.to(device), hid.to(device)
         sid, hid = sid.float(), hid.float()
-        print(np.argwhere(hid.numpy()>0))
         optimizer.zero_grad()
         # batch*805 概率矩阵
         outputs = model(sh_data.x, sh_data.edge_index, ss_data.x, ss_data.edge_index,

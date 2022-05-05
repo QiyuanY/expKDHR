@@ -308,21 +308,21 @@ class KDHR(torch.nn.Module):
         user_embeddings_all = torch.tensor(user_embeddings_all)
         item_embeddings_all = torch.tensor(item_embeddings_all)
 
-        norm_user_embeddings = F.normalize(user_embeddings_all)
+        norm_user_embeddings = F.normalize(user_embeddings_all, dim=0)
         norm_user_embeddings = norm_user_embeddings.view(805, -1)
         self.e_step()
         user2cluster = self.user_2cluster[self.userID]  # [B,]
 
         user2centroids = self.user_centroids[user2cluster]  # [B, e]
         pos_score_user = torch.mul(norm_user_embeddings, user2centroids).sum(dim=1)
-        pos_score_user = torch.exp(pos_score_user / np.float32(self.ssl_temp))
+        pos_score_user = torch.exp(pos_score_user/ self.ssl_temp)
         ttl_score_user = torch.matmul(norm_user_embeddings, self.user_centroids.transpose(0, 1))
         ttl_score_user = torch.exp(ttl_score_user / self.ssl_temp).sum(dim=1)
 
         proto_nce_loss_user = -torch.log(pos_score_user / ttl_score_user).sum()
 
         # item_embeddings = item_embeddings_all[item]
-        norm_item_embeddings = F.normalize(item_embeddings_all)
+        norm_item_embeddings = F.normalize(item_embeddings_all, dim=0)
         norm_item_embeddings = norm_item_embeddings.view(390, -1)
         item2cluster = self.item_2cluster[self.itemID]  # [B, ]
         item2centroids = self.item_centroids[item2cluster]  # [B, e]
