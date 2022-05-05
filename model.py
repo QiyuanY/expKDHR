@@ -92,6 +92,7 @@ class KDHR(torch.nn.Module):
 
         self.userID = torch.linspace(0, 804, 805).long()
         self.itemID = torch.linspace(0, 389, 390).long()
+        self.xID = torch.linspace(0, 1194, 1195).long()
 
         # S-H 图所需的网络
         # S
@@ -127,10 +128,10 @@ class KDHR(torch.nn.Module):
         self.SI_bn = torch.nn.BatchNorm1d(64)
         self.relu = torch.nn.ReLU()
 
-    def forward(self, x_SH, edge_index_SH, x_SS, edge_index_SS, x_HH, edge_index_HH, prescription):
+    def forward(self, x_SH, edge_index_SH, prescription):
         # S-H图搭建
         # 第一层
-        x_SH1 = self.SH_embedding(x_SH.long())
+        x_SH1 = torch.tensor(self.SH_embedding, dtype=torch.float32, requires_grad=False)[self.xID]
         # x_SH1 = torch.tensor(torch.nn.Embedding(1195, 64).view(1195, 1, 64)
 
         # 这里的x_SH2和下边的x_SH22有区别，目前不知道什么原因
@@ -233,8 +234,6 @@ class KDHR(torch.nn.Module):
         current_item_embeddings = current_item_embeddings.view(390, -1)
         previous_user_embeddings_all = previous_user_embeddings_all.view(805, -1)
         previous_item_embeddings_all = previous_item_embeddings_all.view(390, -1)
-
-
 
         current_user_embeddings = current_user_embeddings[self.userID]
         #print(previous_user_embeddings_all)
@@ -372,7 +371,9 @@ class KDHR(torch.nn.Module):
 
         # return mf_loss + self.reg_weight * reg_loss, ssl_loss, proto_loss
         ssl_loss, self.ssl_u, self.ssl_i = self.ssl_layer_loss()
+        print(ssl_loss)
         nce_loss, self.nce_u, self.nce_i = self.ProtoNCE_loss()
+        print(nce_loss)
 
         return ssl_loss + nce_loss
 
