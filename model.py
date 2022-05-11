@@ -94,6 +94,8 @@ class KDHR(torch.nn.Module):
         self.itemID = torch.linspace(0, 389, 390).long()
         self.xID = torch.linspace(0, 1194, 1195).long()
 
+
+
         # S-H 图所需的网络
         # S
         self.convSH_TostudyS_1 = GCNConv_SH(embedding_dim, embedding_dim)
@@ -128,32 +130,38 @@ class KDHR(torch.nn.Module):
         self.SI_bn = torch.nn.BatchNorm1d(64)
         self.relu = torch.nn.ReLU()
 
-    def forward(self, x_SH, edge_index_SH, prescription):
+    def forward(self, x_SH, edge_index_SH, x_SS, edge_index_SS, x_HH, edge_index_HH, prescription):
         # S-H图搭建
         # 第一层
-        x_SH1 = torch.tensor(self.SH_embedding, dtype=torch.float32, requires_grad=False)[self.xID]
-        # x_SH1 = torch.tensor(torch.nn.Embedding(1195, 64).view(1195, 1, 64)
+        l = torch.tensor(np.arange(0,1195), dtype=torch.float32, requires_grad=True)
+        x_SH1 = self.SH_embedding(l.long())
+        #x_SH1 = torch.tensor(self.SH_embedding, dtype=torch.float)[self.xID]
 
         # 这里的x_SH2和下边的x_SH22有区别，目前不知道什么原因
         x_SH2 = self.convSH_TostudyS_1(x_SH1.float(), edge_index_SH)
         # 第二层
         x_SH6 = self.convSH_TostudyS_2(x_SH2, edge_index_SH)
-        # x_SH6 = x_SH6.view(-1, 256)
-        # 第三层
-        # x_SH7 = self.convSH_TostudyS_3(x_SH6, edge_index_SH)
-
-        # x_SH9 = (x_SH1 + x_SH2 + x_SH6 ) / 3.0
-        # x_SH9 = self.SH_mlp_1(x_SH9)
-        # x_SH9 = x_SH9.view(1195, -1)
-        # x_SH9 = self.SH_bn_1(x_SH9)
-        # x_SH9 = self.SH_tanh_1(x_SH9)
-
-        # SH H
-        # 0: 草药 1: 症状
-        x_SH11 = self.SH_embedding(x_SH.long())
+        # # x_SH1 = self.x_SH1.requires_grad_(True)
+        # # x_SH6 = x_SH6.requires_grad_(True)
+        # # x_SH6 = x_SH6.view(-1, 256)
+        # # 第三层
+        # # x_SH7 = self.convSH_TostudyS_3(x_SH6, edge_index_SH)
+        #
+        # # x_SH9 = (x_SH1 + x_SH2 + x_SH6 ) / 3.0
+        # # x_SH9 = self.SH_mlp_1(x_SH9)
+        # # x_SH9 = x_SH9.view(1195, -1)
+        # # x_SH9 = self.SH_bn_1(x_SH9)
+        # # x_SH9 = self.SH_tanh_1(x_SH9)
+        #
+        # # SH H
+        # # 0: 草药 1: 症状
+        #
+        x_SH11 = self.SH_embedding(l.long())
         x_SH22 = self.convSH_TostudyS_1_h(x_SH11.float(), edge_index_SH)
         # 第二层
         x_SH66 = self.convSH_TostudyS_2_h(x_SH22, edge_index_SH)
+        # x_SH11 = self.x_SH11.requires_grad_(True)
+        # x_SH66 = x_SH66.requires_grad_(True)
         # x_SH66 = x_SH66.view(-1, 256)
         self.p_embedding_0, self.p_embedding_1 = torch.split(x_SH11, [805, 390])
         self.c_embedding_0, self.c_embedding_1 = torch.split(x_SH6, [805, 390])
@@ -187,8 +195,8 @@ class KDHR(torch.nn.Module):
         # sum操作
         _, n_u, n_i = self.ProtoNCE_loss()
         # n_i:805 n_u:390
-        es = torch.tensor(s_u + n_u)#+ s_lossemb
-        eh = torch.tensor(s_i + n_i)#+ h_lossemb
+        es = torch.as_tensor(s_u + n_u)#+ s_lossemb
+        eh = torch.as_tensor(s_i + n_i)#+ h_lossemb
         # es = torch.tensor(self.ssl_i + self.nce_i) + s_lossemb
         # eh = torch.tensor(self.ssl_u + self.nce_u) + h_lossemb
         # cat
@@ -225,10 +233,10 @@ class KDHR(torch.nn.Module):
         current_user_embeddings, current_item_embeddings = self.c_embedding_0, self.c_embedding_1
         previous_user_embeddings_all, previous_item_embeddings_all = self.p_embedding_0, self.p_embedding_1
 
-        current_item_embeddings = torch.tensor(current_item_embeddings)
-        current_user_embeddings = torch.tensor(current_user_embeddings)
-        previous_user_embeddings_all = torch.tensor(previous_user_embeddings_all)
-        previous_item_embeddings_all = torch.tensor(previous_item_embeddings_all)
+        current_item_embeddings = torch.as_tensor(current_item_embeddings)
+        current_user_embeddings = torch.as_tensor(current_user_embeddings)
+        previous_user_embeddings_all = torch.as_tensor(previous_user_embeddings_all)
+        previous_item_embeddings_all = torch.as_tensor(previous_item_embeddings_all)
 
         current_user_embeddings = current_user_embeddings.view(805, -1)
         current_item_embeddings = current_item_embeddings.view(390, -1)
@@ -243,7 +251,7 @@ class KDHR(torch.nn.Module):
         norm_user_emb1 = F.normalize(current_user_embeddings, dim=0)
         norm_user_emb2 = F.normalize(previous_user_embeddings, dim=0)
 
-        norm_all_user_emb = F.normalize(torch.tensor(previous_user_embeddings_all))
+        norm_all_user_emb = F.normalize(torch.as_tensor(previous_user_embeddings_all))
         #print(norm_all_user_emb)
         pos_score_user = torch.mul(norm_user_emb1, norm_user_emb2).sum(dim=1)
         ttl_score_user = torch.matmul(norm_user_emb1, norm_all_user_emb.transpose(0, 1))
@@ -258,7 +266,7 @@ class KDHR(torch.nn.Module):
         norm_item_emb1 = F.normalize(current_item_embeddings, dim=1)
         norm_item_emb2 = F.normalize(previous_item_embeddings, dim=1)
 
-        norm_all_item_emb = F.normalize(previous_item_embeddings_all)
+        norm_all_item_emb = F.normalize(torch.as_tensor(previous_item_embeddings_all))
 
         pos_score_item = torch.mul(norm_item_emb1, norm_item_emb2).sum(dim=1)
         ttl_score_item = torch.matmul(norm_item_emb1, norm_all_item_emb.transpose(0, 1))
@@ -304,8 +312,8 @@ class KDHR(torch.nn.Module):
         # self.p_embedding = torch.tensor(self.p_embedding)
         user_embeddings_all, item_embeddings_all = self.c_embedding_0, self.c_embedding_1
         # user_embeddings = user_embeddings_all[user]  # [B, e]
-        user_embeddings_all = torch.tensor(user_embeddings_all)
-        item_embeddings_all = torch.tensor(item_embeddings_all)
+        user_embeddings_all = torch.as_tensor(user_embeddings_all)
+        item_embeddings_all = torch.as_tensor(item_embeddings_all)
 
         norm_user_embeddings = F.normalize(user_embeddings_all, dim=0)
         norm_user_embeddings = norm_user_embeddings.view(805, -1)

@@ -39,8 +39,8 @@ class Logger(object):
 
     def flush(self):
         pass
-para = parameter.para(lr=3e-4, rec=7e-3, drop=0.0, batchSize=512, epoch=200, dev_ratio=0.2, test_ratio=0.2)
-# para = parameter.para(lr=0.05, rec=7e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
+#para = parameter.para(lr=3e-4, rec=7e-3, drop=0.0, batchSize=512, epoch=200, dev_ratio=0.2, test_ratio=0.2)
+para = parameter.para(lr=0.05, rec=7e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
 path = os.path.abspath(os.path.dirname(__file__))
 type = sys.getfilesystemencoding()
 sys.stdout = Logger('khdr.txt')
@@ -133,7 +133,6 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=7 , gamma=0.8)
 
 early_stopping = EarlyStopping(patience=7, verbose=True)
 
-
 epsilon = 1e-13
 
 for epoch in range(para.epoch):
@@ -145,7 +144,8 @@ for epoch in range(para.epoch):
         sid, hid = sid.float(), hid.float()
         optimizer.zero_grad()
         # batch*805 概率矩阵
-        outputs = model(sh_data.x, sh_data.edge_index, sid)
+        outputs = model(sh_data.x, sh_data.edge_index, ss_data.x, ss_data.edge_index,
+                        hh_data.x, hh_data.edge_index, sid)
         # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, sid)
         loss = criterion(outputs, hid) + model.calculate_loss()
         loss.backward()
@@ -173,7 +173,8 @@ for epoch in range(para.epoch):
     for tsid, thid in dev_loader:
         tsid, thid = tsid.float(), thid.float()
         # batch*805 概率矩阵
-        outputs = model(sh_data.x, sh_data.edge_index, tsid)
+        outputs = model(sh_data.x, sh_data.edge_index, ss_data.x, ss_data.edge_index,
+                        hh_data.x, hh_data.edge_index, tsid)
         # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, tsid)
         dev_loss += criterion(outputs, thid).item()
 
