@@ -40,7 +40,7 @@ class Logger(object):
     def flush(self):
         pass
 #para = parameter.para(lr=3e-4, rec=7e-3, drop=0.0, batchSize=512, epoch=200, dev_ratio=0.2, test_ratio=0.2)
-para = parameter.para(lr=0.05, rec=7e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
+para = parameter.para(lr=0.05, rec=4e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
 path = os.path.abspath(os.path.dirname(__file__))
 type = sys.getfilesystemencoding()
 sys.stdout = Logger('khdr.txt')

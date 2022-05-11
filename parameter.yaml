@@ -1,0 +1,19 @@
+main:
+  lr: 0.05
+  rec: 7e-3
+  batch_size: 8192
+  epoch: 200
+  dev_ratio: 0.2
+  test_ratio: 0.2
+
+model:
+  ssl:
+    temp: 0.05
+    reg: 1e-6
+    alpha: 1.5
+  nce:
+    k: 20
+    k_1: 9
+    proto_reg: 8e-8
+
+
