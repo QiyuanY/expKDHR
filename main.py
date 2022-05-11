@@ -8,6 +8,7 @@ from model import *
 # from model_SMGCN import SMGCN
 import sys
 import os
+#import Optuna
 import parameter
 import numpy as np
 import pandas as pd
@@ -20,6 +21,8 @@ import time
 from sklearn.metrics import roc_auc_score
 import types
 from torch_sparse import SparseTensor
+
+#import Lr_auto
 
 seed = 202254
 np.random.seed(seed)
@@ -40,11 +43,11 @@ class Logger(object):
     def flush(self):
         pass
 #para = parameter.para(lr=3e-4, rec=7e-3, drop=0.0, batchSize=512, epoch=200, dev_ratio=0.2, test_ratio=0.2)
-para = parameter.para(lr=0.05, rec=4e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
+para = parameter.para(lr=0.05, rec=2e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
 path = os.path.abspath(os.path.dirname(__file__))
 type = sys.getfilesystemencoding()
 sys.stdout = Logger('khdr.txt')
-
+#print(Lr_auto.params)
 print(time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime()))
 print("lr: ",para.lr, " rec: ", para.rec, " dropout: ",para.drop, " batchsize: ",
       para.batchSize, " epoch: ",para.epoch, " dev_ratio: ",para.dev_ratio, " test_ratio: ", para.test_ratio)
@@ -122,6 +125,7 @@ test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=para.batchSiz
 # print(len(test_loader))
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# model = KDHR(390, 805, 1195, 64, params)
 model = KDHR(390, 805, 1195, 64, para.batchSize, para.drop)
 # model = KDHR(390, 805, 1195, 64)
 
@@ -176,7 +180,7 @@ for epoch in range(para.epoch):
         outputs = model(sh_data.x, sh_data.edge_index, ss_data.x, ss_data.edge_index,
                         hh_data.x, hh_data.edge_index, tsid)
         # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, tsid)
-        dev_loss += criterion(outputs, thid).item()
+        dev_loss += criterion(outputs, thid).item() #+ model.calculate_loss().item()
 
         # thid batch*805
         for i, hid in enumerate(thid):

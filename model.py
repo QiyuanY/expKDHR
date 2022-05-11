@@ -60,6 +60,9 @@ class GCNConv_SS_HH(MessagePassing):
 class KDHR(torch.nn.Module):
     def __init__(self, ss_num, hh_num, sh_num, embedding_dim, batchSize, drop):
         super(KDHR, self).__init__()
+        # if trail:
+        #     pass
+
         self.batchSize = batchSize
         self.dropout = drop
         self.SH_embedding = torch.nn.Embedding(sh_num, embedding_dim)
