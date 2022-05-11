@@ -19,6 +19,10 @@ torch==1.5.0+cu102
 
 torch-geometric==1.4.3 (KDHR) == 1.6.3(other baselines)
 
+## torch-cluster==2.0.5
+
+## torch-sparse==0.6.5
+
 numpy==1.18.1
 
 pandas==1.0.1
