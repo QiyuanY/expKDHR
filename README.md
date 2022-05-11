@@ -17,7 +17,7 @@ python==3.7.9(there are some bugs when use python>3.7.9 including(3.7.13 3.8+)
 
 torch==1.5.0+cu102
 
-torch-geometric==1.4.3 (KDHR) == 1.6.3(other baselines)
+torch-geometric
 
     torch-cluster==2.0.5
 
