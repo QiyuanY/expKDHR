@@ -75,7 +75,7 @@ class KDHR(torch.nn.Module):
 
         self.c_embedding_0 = []
         self.c_embedding_1 = []
-        self.ssl_temp = 0.05
+        self.ssl_temp = 0.5
         self.ssl_reg = 1e-6
         self.alpha = 1.5
         self.latent_dim = 64
@@ -96,8 +96,6 @@ class KDHR(torch.nn.Module):
         self.userID = torch.linspace(0, 804, 805).long()
         self.itemID = torch.linspace(0, 389, 390).long()
         self.xID = torch.linspace(0, 1194, 1195).long()
-
-
 
         # S-H 图所需的网络
         # S
@@ -136,9 +134,9 @@ class KDHR(torch.nn.Module):
     def forward(self, x_SH, edge_index_SH, x_SS, edge_index_SS, x_HH, edge_index_HH, prescription):
         # S-H图搭建
         # 第一层
-        l = torch.tensor(np.arange(0,1195), dtype=torch.float32, requires_grad=True)
+        l = torch.tensor(np.arange(0, 1195), dtype=torch.float32, requires_grad=True)
         x_SH1 = self.SH_embedding(l.long())
-        #x_SH1 = torch.tensor(self.SH_embedding, dtype=torch.float)[self.xID]
+        # x_SH1 = torch.tensor(self.SH_embedding, dtype=torch.float)[self.xID]
 
         # 这里的x_SH2和下边的x_SH22有区别，目前不知道什么原因
         x_SH2 = self.convSH_TostudyS_1(x_SH1.float(), edge_index_SH)
@@ -198,8 +196,8 @@ class KDHR(torch.nn.Module):
         # sum操作
         _, n_u, n_i = self.ProtoNCE_loss()
         # n_i:805 n_u:390
-        es = torch.as_tensor(s_u + n_u)#+ s_lossemb
-        eh = torch.as_tensor(s_i + n_i)#+ h_lossemb
+        es = torch.as_tensor(s_u + n_u)  # + s_lossemb
+        eh = torch.as_tensor(s_i + n_i)  # + h_lossemb
         # es = torch.tensor(self.ssl_i + self.nce_i) + s_lossemb
         # eh = torch.tensor(self.ssl_u + self.nce_u) + h_lossemb
         # cat
@@ -220,7 +218,7 @@ class KDHR(torch.nn.Module):
         # batch*dim
         e_synd_norm = e_synd / preSum
         e_synd_norm = self.mlp(e_synd_norm)
-        #e_synd_norm = e_synd_norm.view(-1, 256)
+        # e_synd_norm = e_synd_norm.view(-1, 256)
         e_synd_norm = self.SI_bn(e_synd_norm)
         e_synd_norm = self.relu(e_synd_norm)  # batch*dim
         # batch*dim dim*805 => batch*805
@@ -247,22 +245,21 @@ class KDHR(torch.nn.Module):
         previous_item_embeddings_all = previous_item_embeddings_all.view(390, -1)
 
         current_user_embeddings = current_user_embeddings[self.userID]
-        #print(previous_user_embeddings_all)
+        # print(previous_user_embeddings_all)
         previous_user_embeddings = previous_user_embeddings_all[self.userID]
-        #print(previous_user_embeddings)
+        # print(previous_user_embeddings)
 
         norm_user_emb1 = F.normalize(current_user_embeddings, dim=0)
         norm_user_emb2 = F.normalize(previous_user_embeddings, dim=0)
 
         norm_all_user_emb = F.normalize(torch.as_tensor(previous_user_embeddings_all))
-        #print(norm_all_user_emb)
+        # print(norm_all_user_emb)
         pos_score_user = torch.mul(norm_user_emb1, norm_user_emb2).sum(dim=1)
         ttl_score_user = torch.matmul(norm_user_emb1, norm_all_user_emb.transpose(0, 1))
         pos_score_user = torch.exp(pos_score_user / self.ssl_temp)
         ttl_score_user = torch.exp(ttl_score_user / self.ssl_temp).sum(dim=1)
 
         ssl_loss_user = -torch.log(pos_score_user / ttl_score_user).sum()
-
 
         current_item_embeddings = current_item_embeddings[self.itemID]
         previous_item_embeddings = previous_item_embeddings_all[self.itemID]
@@ -325,7 +322,7 @@ class KDHR(torch.nn.Module):
 
         user2centroids = self.user_centroids[user2cluster]  # [B, e]
         pos_score_user = torch.mul(norm_user_embeddings, user2centroids).sum(dim=1)
-        pos_score_user = torch.exp(pos_score_user/ self.ssl_temp)
+        pos_score_user = torch.exp(pos_score_user / self.ssl_temp)
         ttl_score_user = torch.matmul(norm_user_embeddings, self.user_centroids.transpose(0, 1))
         ttl_score_user = torch.exp(ttl_score_user / self.ssl_temp).sum(dim=1)
 
@@ -388,17 +385,3 @@ class KDHR(torch.nn.Module):
 
         return ssl_loss + nce_loss
 
-    # def same2ssl(self, x, index):
-    #     ssl_loss = 0
-    #     for i, j in enumerate(index):
-    #         # x和index是通过Data方法转换后的形式
-    #         norm_user_emb1, norm_user_emb2 = x[i], x[j]
-    #
-    #         pos_score_user = torch.mul(norm_user_emb1, norm_user_emb2).sum(dim=1)
-    #         ttl_score_user = torch.matmul(norm_user_emb1, self.p_embedding_0[805].transpose(0, 1))
-    #         pos_score_user = torch.exp(pos_score_user / self.ssl_temp)
-    #         ttl_score_user = torch.exp(ttl_score_user / self.ssl_temp).sum(dim=1)
-    #
-    #         ssl_loss = -torch.log(pos_score_user / ttl_score_user).sum()
-    #
-    #     return ssl_loss, x

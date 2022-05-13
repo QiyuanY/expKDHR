@@ -1,6 +1,6 @@
 main:
   lr: 0.05
-  rec: 7e-3
+  rec: 2e-3
   batch_size: 8192
   epoch: 200
   dev_ratio: 0.2
