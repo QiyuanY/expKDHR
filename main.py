@@ -21,10 +21,13 @@ import time
 from sklearn.metrics import roc_auc_score
 import types
 from torch_sparse import SparseTensor
+from torch import cuda
 
 # import Lr_auto
 
 seed = 2021512
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(device)
 
 
 # np.random.seed(seed)
@@ -56,8 +59,8 @@ sh_edge = sh_edge.tolist()
 sh_edge_index = torch.tensor(sh_edge, dtype=torch.long)
 sh_x = torch.tensor([[i] for i in range(1195)], dtype=torch.float)
 sh_data = Data(x=sh_x, edge_index=sh_edge_index.t().contiguous())  ### 制图
-sh_data_adj = SparseTensor(row=sh_data.edge_index[0], col=sh_data.edge_index[1],
-                           sparse_sizes=(1195, 1195))  ### 邻接矩阵
+# sh_data_adj = SparseTensor(row=sh_data.edge_index[0], col=sh_data.edge_index[1],
+#                            sparse_sizes=(1195, 1195))  ### 邻接矩阵
 # S-S G
 ss_edge = np.load('./data/ss_graph.npy')
 ss_edge = ss_edge.tolist()
@@ -84,6 +87,10 @@ pS_array = np.array(pS_list)
 # 草药的one-hot 矩阵
 pH_list = [[0] * 805 for _ in range(pLen)]
 pH_array = np.array(pH_list)
+
+pS_array = torch.from_numpy(pS_array).to(device).float()
+pH_array = torch.from_numpy(pH_array).to(device).float()
+
 # 迭代数据集， 赋值  ###目前看不懂这里
 for i in range(pLen):
     j = eval(prescript.iloc[i, 0])
@@ -100,7 +107,7 @@ for i in range(pLen):
 # # 读取KG中知识的独热编码
 # kg_oneHot = np.load('./data/herb_805_27_oneHot.npy')
 # kg_oneHot = torch.from_numpy(kg_oneHot).float()
-para = parameter.para(lr=0.055, rec=1e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
+para = parameter.para(lr=0.056, rec=1e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
 path = os.path.abspath(os.path.dirname(__file__))
 type = sys.getfilesystemencoding()
 sys.stdout = Logger('khdr.txt')
@@ -126,16 +133,21 @@ dev_loader = torch.utils.data.DataLoader(dev_dataset, batch_size=para.batchSize)
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=para.batchSize)
 # print(len(test_loader))
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 # model = KDHR(390, 805, 1195, 64, params)
-model = KDHR(390, 805, 1195, 64, para.batchSize, para.drop)
+
+model = KDHR(390, 805, 1195, 64, para.batchSize, para.drop).to(device)
 # model = KDHR(390, 805, 1195, 64)
 
-criterion = torch.nn.BCEWithLogitsLoss(reduction="mean")
+criterion = torch.nn.BCEWithLogitsLoss(reduction="mean").to(device)
 
 early_stopping = EarlyStopping(patience=7, verbose=True)
 
 epsilon = 1e-13
+
+ss_data = ss_data.to(device)
+hh_data = hh_data.to(device)
+sh_data = sh_data.to(device)
 
 
 def objective(trial):
@@ -156,16 +168,17 @@ def objective(trial):
         running_loss = 0.0
         for i, (sid, hid) in enumerate(train_loader):
             # sid, hid = sid.to(device), hid.to(device)
-            sid, hid = sid.float(), hid.float()
+            # sid, hid = sid.float().to(device), hid.float().to(device)
             optimizer.zero_grad()
             # batch*805 概率矩阵
             outputs = model(sh_data.x, sh_data.edge_index, ss_data.x, ss_data.edge_index,
                             hh_data.x, hh_data.edge_index, sid)
             # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, sid)
             loss = criterion(outputs, hid) + model.calculate_loss()
+            loss = loss.to(device)
             loss.backward()
             optimizer.step()
-            running_loss += loss.item()
+            running_loss += loss#.item()
         # print train loss per every epoch
         print('[Epoch {}]train_loss: '.format(epoch + 1), running_loss / len(train_loader))
         # print('[Epoch {}]train_loss: '.format(epoch + 1), running_loss / len(x_train))
@@ -186,20 +199,20 @@ def objective(trial):
         dev_f1_10 = 0
         dev_f1_20 = 0
         for tsid, thid in dev_loader:
-            tsid, thid = tsid.float(), thid.float()
+            # tsid, thid = tsid.float().to(device), thid.float().to(device)
             # batch*805 概率矩阵
             outputs = model(sh_data.x, sh_data.edge_index, ss_data.x, ss_data.edge_index,
                             hh_data.x, hh_data.edge_index, tsid)
             # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, tsid)
-            dev_loss += criterion(outputs, thid).item() + model.calculate_loss().item()
+            dev_loss += (criterion(outputs, thid) + model.calculate_loss())#.item()
 
             # thid batch*805
             for i, hid in enumerate(thid):
-                trueLabel = []  # 对应存在草药的索引
-                for idx, val in enumerate(hid):  # 获得thid中值为一的索引
-                    if val == 1:
-                        trueLabel.append(idx)
-
+                # trueLabel = []  # 对应存在草药的索引
+                # for idx, val in enumerate(hid):  # 获得thid中值为一的索引
+                #     if val == 1:
+                #         trueLabel.append(idx)
+                trueLabel = (hid == 1).nonzero().flatten()
                 top5 = torch.topk(outputs[i], 5)[1]  # 预测值前5索引
                 count = 0
                 for m in top5:
@@ -267,19 +280,19 @@ def objective(trial):
     test_f1_20 = 0
 
     for tsid, thid in test_loader:
-        tsid, thid = tsid.float(), thid.float()
+        # tsid, thid = tsid.float(), thid.float()
         # batch*805 概率矩阵
         outputs = model(sh_data.x, sh_data.edge_index, ss_data.x, ss_data.edge_index, hh_data.x, hh_data.edge_index,
                         tsid)
 
-        test_loss += criterion(outputs, thid).item()
+        test_loss += criterion(outputs, thid)#.item()
         # thid batch*805
         for i, hid in enumerate(thid):
-            trueLabel = []  # 对应存在草药的索引
-            for idx, val in enumerate(hid):  # 获得thid中值为一的索引
-                if val == 1:
-                    trueLabel.append(idx)
-
+            # trueLabel = []  # 对应存在草药的索引
+            # for idx, val in enumerate(hid):  # 获得thid中值为一的索引
+            #     if val == 1:
+            #         trueLabel.append(idx)
+            trueLabel = (hid == 1).nonzero().flatten()
             top5 = torch.topk(outputs[i], 5)[1]  # 预测值前5索引
             count = 0
             for m in top5:
@@ -321,7 +334,7 @@ def objective(trial):
                   (test_p20 / len(x_test)) + (test_r20 / len(x_test))))
 
     score_f1 = 2 * (test_p20 / len(x_test)) * (test_r20 / len(x_test)) / (
-                (test_p20 / len(x_test)) + (test_r20 / len(x_test)))
+            (test_p20 / len(x_test)) + (test_r20 / len(x_test)))
     return score_f1
 
 

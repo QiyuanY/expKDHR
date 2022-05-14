@@ -17,6 +17,8 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)
 torch.manual_seed(seed)
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 class GCNConv_SH(MessagePassing):
     def __init__(self, in_channels, out_channels):
@@ -131,11 +133,22 @@ class KDHR(torch.nn.Module):
         self.SI_bn = torch.nn.BatchNorm1d(64)
         self.relu = torch.nn.ReLU()
 
+        self.proj = torch.nn.Sequential(
+            torch.nn.Linear(embedding_dim, 64),
+            torch.nn.ELU(),
+            torch.nn.Linear(embedding_dim, 64)
+        )
+        self.tau = 0.5
+        self.lam = 0.5
+        for model in self.proj:
+            if isinstance(model, torch.nn.Linear):
+                torch.nn.init.xavier_normal_(model.weight, gain=1.414)
+
     def forward(self, x_SH, edge_index_SH, x_SS, edge_index_SS, x_HH, edge_index_HH, prescription):
         # S-H图搭建
         # 第一层
-        l = torch.tensor(np.arange(0, 1195), dtype=torch.float32, requires_grad=True)
-        x_SH1 = self.SH_embedding(l.long())
+        l = torch.tensor(np.arange(0, 1195), dtype=torch.float32, requires_grad=True,device=device).long()
+        x_SH1 = self.SH_embedding(l)
         # x_SH1 = torch.tensor(self.SH_embedding, dtype=torch.float)[self.xID]
 
         # 这里的x_SH2和下边的x_SH22有区别，目前不知道什么原因
@@ -195,20 +208,21 @@ class KDHR(torch.nn.Module):
 
         # sum操作
         _, n_u, n_i = self.ProtoNCE_loss()
-        # n_i:805 n_u:390
-        es = torch.as_tensor(s_u + n_u)  # + s_lossemb
-        eh = torch.as_tensor(s_i + n_i)  # + h_lossemb
-        # es = torch.tensor(self.ssl_i + self.nce_i) + s_lossemb
-        # eh = torch.tensor(self.ssl_u + self.nce_u) + h_lossemb
-        # cat
-        pass
 
-        # sum
-        # es = x_SH9[:390] + x_ss1# ss图view  # 1195,1,64  390,1,64
-        # eh = x_SH99[390:] + x_hh1 # hh图view 805*dim
-        # cat
-        # es = torch.cat((x_SH9[:390], x_ss1), dim=-1)
-        # eh = torch.cat((x_SH99[390:], x_hh1), dim=-1)
+        # z_proj_mp = self.proj(z_mp)
+        # z_proj_sc = self.proj(z_sc)
+        # matrix_mp2sc = self.sim(z_proj_mp, z_proj_sc)
+        # matrix_sc2mp = matrix_mp2sc.t()
+        #
+        # matrix_mp2sc = matrix_mp2sc / (torch.sum(matrix_mp2sc, dim=1).view(-1, 1) + 1e-8)
+        # lori_mp = -torch.log(matrix_mp2sc.mul(pos.to_dense()).sum(dim=-1)).mean()
+        #
+        # matrix_sc2mp = matrix_sc2mp / (torch.sum(matrix_sc2mp, dim=1).view(-1, 1) + 1e-8)
+        # lori_sc = -torch.log(matrix_sc2mp.mul(pos.to_dense()).sum(dim=-1)).mean()
+        # return self.lam * lori_mp + (1 - self.lam) * lori_sc
+        # n_i:805 n_u:390
+        es = torch.as_tensor(s_u + n_u, device=device)
+        eh = torch.as_tensor(s_i + n_i, device=device)
 
         # SI 集成多个症状为一个症状表示 batch*390 390*dim => batch*dim
         es = es.view(390, -1)
@@ -225,6 +239,8 @@ class KDHR(torch.nn.Module):
         eh = eh.view(805, -1)
         pre = torch.mm(e_synd_norm, eh.t())
 
+
+
         return pre
 
     def ssl_layer_loss(self):  # KDHR的0层和N层
@@ -234,10 +250,10 @@ class KDHR(torch.nn.Module):
         current_user_embeddings, current_item_embeddings = self.c_embedding_0, self.c_embedding_1
         previous_user_embeddings_all, previous_item_embeddings_all = self.p_embedding_0, self.p_embedding_1
 
-        current_item_embeddings = torch.as_tensor(current_item_embeddings)
-        current_user_embeddings = torch.as_tensor(current_user_embeddings)
-        previous_user_embeddings_all = torch.as_tensor(previous_user_embeddings_all)
-        previous_item_embeddings_all = torch.as_tensor(previous_item_embeddings_all)
+        current_item_embeddings = torch.as_tensor(current_item_embeddings,device=device)
+        current_user_embeddings = torch.as_tensor(current_user_embeddings,device=device)
+        previous_user_embeddings_all = torch.as_tensor(previous_user_embeddings_all,device=device)
+        previous_item_embeddings_all = torch.as_tensor(previous_item_embeddings_all,device=device)
 
         current_user_embeddings = current_user_embeddings.view(805, -1)
         current_item_embeddings = current_item_embeddings.view(390, -1)
@@ -252,7 +268,7 @@ class KDHR(torch.nn.Module):
         norm_user_emb1 = F.normalize(current_user_embeddings, dim=0)
         norm_user_emb2 = F.normalize(previous_user_embeddings, dim=0)
 
-        norm_all_user_emb = F.normalize(torch.as_tensor(previous_user_embeddings_all))
+        norm_all_user_emb = F.normalize(torch.as_tensor(previous_user_embeddings_all,device=device))
         # print(norm_all_user_emb)
         pos_score_user = torch.mul(norm_user_emb1, norm_user_emb2).sum(dim=1)
         ttl_score_user = torch.matmul(norm_user_emb1, norm_all_user_emb.transpose(0, 1))
@@ -266,7 +282,7 @@ class KDHR(torch.nn.Module):
         norm_item_emb1 = F.normalize(current_item_embeddings, dim=1)
         norm_item_emb2 = F.normalize(previous_item_embeddings, dim=1)
 
-        norm_all_item_emb = F.normalize(torch.as_tensor(previous_item_embeddings_all))
+        norm_all_item_emb = F.normalize(torch.as_tensor(previous_item_embeddings_all,device=device))
 
         pos_score_item = torch.mul(norm_item_emb1, norm_item_emb2).sum(dim=1)
         ttl_score_item = torch.matmul(norm_item_emb1, norm_all_item_emb.transpose(0, 1))
@@ -291,10 +307,10 @@ class KDHR(torch.nn.Module):
         _, I = kmeans.index.search(x, 1)
 
         # convert to cuda Tensors for broadcast
-        centroids = torch.tensor(cluster_cents).to(self.device_0)
+        centroids = torch.tensor(cluster_cents,device=device)
         centroids = F.normalize(centroids, p=2, dim=1)
 
-        node2cluster = torch.LongTensor(I).squeeze().to(self.device_0)
+        node2cluster = torch.LongTensor(I).squeeze().to(self.device)
         return centroids, node2cluster
 
     def e_step(self):
@@ -312,8 +328,8 @@ class KDHR(torch.nn.Module):
         # self.p_embedding = torch.tensor(self.p_embedding)
         user_embeddings_all, item_embeddings_all = self.c_embedding_0, self.c_embedding_1
         # user_embeddings = user_embeddings_all[user]  # [B, e]
-        user_embeddings_all = torch.as_tensor(user_embeddings_all)
-        item_embeddings_all = torch.as_tensor(item_embeddings_all)
+        user_embeddings_all = torch.as_tensor(user_embeddings_all,device=device)
+        item_embeddings_all = torch.as_tensor(item_embeddings_all,device=device)
 
         norm_user_embeddings = F.normalize(user_embeddings_all, dim=0)
         norm_user_embeddings = norm_user_embeddings.view(805, -1)
@@ -385,3 +401,13 @@ class KDHR(torch.nn.Module):
 
         return ssl_loss + nce_loss
 
+    def sim(self, z1, z2):
+        z1_norm = torch.norm(z1, dim=-1, keepdim=True)
+        z2_norm = torch.norm(z2, dim=-1, keepdim=True)
+        dot_numerator = torch.mm(z1, z2.t())
+        dot_denominator = torch.mm(z1_norm, z2_norm.t())
+        sim_matrix = torch.exp(dot_numerator / dot_denominator / self.tau)
+        return sim_matrix
+
+    def SameContrast(self, z_mp, z_sc, pos):
+        pass
