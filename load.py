@@ -1,18 +1,29 @@
 import numpy as np
-import torch
-from torch_geometric.data import Data
+import scipy.sparse as sp
 
 
-#
-# input_data = np.load(r"./data/ss_graph.npy")
-# data = input_data.tolist()
+def table2matrix(table):
+    ret = []
+    N = len(table)
+    for i in range(N):
+        tmp = [0] * N
+        for j in table[i]:
+            tmp[j] = 1
+        ret.append(tmp)
+    return ret
 
-def load_data(path, dim):
-    sh_edge = np.load(path)
-    sh_edge = sh_edge.tolist()
-    sh_edge_index = torch.tensor(sh_edge, dtype=torch.long)
-    sh_x = torch.tensor([[i] for i in range(dim, )], dtype=torch.float)
-    sh_data = Data(x=sh_x, edge_index=sh_edge_index.t().contiguous())  ### 制图
-    # sh_data_adj = SparseTensor(row=sh_data.edge_index[0], col=sh_data.edge_index[1],
-    #                            sparse_sizes=(1195, 1195))  ### 邻接矩阵
-    return sh_data
+
+def pos_create_1(path, p):
+    input_data = np.load(path)
+    data = input_data
+    mat = np.array(table2matrix(data))
+    np.save("ss_pos.npy", mat)
+
+def pos_create_2(path, p):
+    input_data = np.load(path)
+    data = input_data - 390
+    mat = np.array(table2matrix(data))
+    np.save("hh_pos.npy", mat)
+
+pos_create_1('./data/ss_graph.npy', 390)
+pos_create_2('./data/hh_graph.npy', 805)
