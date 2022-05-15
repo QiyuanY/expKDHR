@@ -1,6 +1,17 @@
 import numpy as np
 import scipy.sparse as sp
+import torch
 
+def arr2coo(arr):
+    a = np.array(arr)
+    idx = a.nonzero()  # (row, col)
+    data = a[idx]
+
+    # to torch tensor
+    idx_t = torch.LongTensor(np.vstack(idx))
+    data_t = torch.FloatTensor(data)
+    coo_a = torch.sparse_coo_tensor(idx_t, data_t, a.shape)
+    return coo_a
 
 def table2matrix(table):
     ret = []

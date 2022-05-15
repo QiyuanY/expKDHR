@@ -56,30 +56,30 @@ class Logger(object):
 # 读取S-H图
 sh_edge = np.load('./data/sh_graph.npy')
 sh_edge = sh_edge.tolist()
-sh_edge_index = torch.tensor(sh_edge, dtype=torch.long).to(device)
+sh_edge_index = torch.tensor(sh_edge, dtype=torch.long)
 sh_x = torch.tensor([[i] for i in range(1195)], dtype=torch.float)
-# sh_data = Data(x=sh_x, edge_index=sh_edge_index.t().contiguous())  ### 制图
+sh_data = Data(x=sh_x, edge_index=sh_edge_index.t().contiguous())  ### 制图
 # sh_data_adj = SparseTensor(row=sh_data.edge_index[0], col=sh_data.edge_index[1],
 #                            sparse_sizes=(1195, 1195))  ### 邻接矩阵
 # S-S G
-# ss_edge = np.load('./data/ss_graph.npy')
-# ss_edge = ss_edge.tolist()
-# ss_edge_index = torch.tensor(ss_edge, dtype=torch.long)
-# ss_x = torch.tensor([[i] for i in range(390)], dtype=torch.float)
-# ss_data = Data(x=ss_x, edge_index=ss_edge_index.t().contiguous())
+ss_edge = np.load('./data/ss_graph.npy')
+ss_edge = ss_edge.tolist()
+ss_edge_index = torch.tensor(ss_edge, dtype=torch.long)
+ss_x = torch.tensor([[i] for i in range(390)], dtype=torch.float)
+ss_data = Data(x=ss_x, edge_index=ss_edge_index.t().contiguous())
 # ss_data_adj = SparseTensor(row=ss_data.edge_index[0], col=ss_data.edge_index[1],
 #                            sparse_sizes=(390, 390))
 
 # H-H G
-# hh_edge = np.load('./data/hh_graph.npy').tolist()
-# hh_edge_index = torch.tensor(hh_edge, dtype=torch.long) - 390  # 边索引需要减去390
-# hh_x = torch.tensor([[i] for i in range(390, 1195)], dtype=torch.float)
-# hh_data = Data(x=hh_x, edge_index=hh_edge_index.t().contiguous())
+hh_edge = np.load('./data/hh_graph.npy').tolist()
+hh_edge_index = torch.tensor(hh_edge, dtype=torch.long) - 390  # 边索引需要减去390
+hh_x = torch.tensor([[i] for i in range(390, 1195)], dtype=torch.float)
+hh_data = Data(x=hh_x, edge_index=hh_edge_index.t().contiguous())
 # hh_data_adj = SparseTensor(row=hh_data.edge_index[0], col=hh_data.edge_index[1],
 #                            sparse_sizes=(805, 805))
-
-ss_co = torch.from_numpy(np.load('./ss_pos.npy')).to(device)
-hh_co = torch.from_numpy(np.load('./hh_pos.npy')).to(device)
+#
+# ss_co = torch.from_numpy(np.load('./ss_pos.npy')).to(device)
+# hh_co = torch.from_numpy(np.load('./hh_pos.npy')).to(device)
 
 # 读取处方数据
 prescript = pd.read_csv('./data/prescript_1195.csv', encoding='utf-8')
@@ -110,7 +110,7 @@ for i in range(pLen):
 # # 读取KG中知识的独热编码
 # kg_oneHot = np.load('./data/herb_805_27_oneHot.npy')
 # kg_oneHot = torch.from_numpy(kg_oneHot).float()
-para = parameter.para(lr=0.056, rec=8e-4, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
+para = parameter.para(lr=0.056, rec=3e-4, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
 path = os.path.abspath(os.path.dirname(__file__))
 type = sys.getfilesystemencoding()
 sys.stdout = Logger('khdr.txt')
@@ -148,6 +148,10 @@ early_stopping = EarlyStopping(patience=7, verbose=True)
 
 epsilon = 1e-13
 
+ss_data.edge_index = ss_data.edge_index.to(device)
+hh_data.edge_index = hh_data.edge_index.to(device)
+sh_data.edge_index = sh_data.edge_index.to(device)
+
 
 def objective(trial):
     # params = {
@@ -170,13 +174,13 @@ def objective(trial):
             # sid, hid = sid.float().to(device), hid.float().to(device)
             optimizer.zero_grad()
             # batch*805 概率矩阵
-            outputs = model(sh_edge_index, ss_co, hh_co, sid)
+            outputs = model(sh_data.edge_index, ss_data.edge_index, hh_data.edge_index, sid)
             # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, sid)
             loss = criterion(outputs, hid) + model.calculate_loss()
             loss = loss.to(device)
             loss.backward()
             optimizer.step()
-            running_loss += loss  # .item()
+            running_loss += loss.item()
         # print train loss per every epoch
         print('[Epoch {}]train_loss: '.format(epoch + 1), running_loss / len(train_loader))
         # print('[Epoch {}]train_loss: '.format(epoch + 1), running_loss / len(x_train))
@@ -199,10 +203,11 @@ def objective(trial):
         for tsid, thid in dev_loader:
             # tsid, thid = tsid.float().to(device), thid.float().to(device)
             # batch*805 概率矩阵
-            outputs = model(sh_edge_index, ss_co, hh_co, tsid)
+            outputs = model(sh_data.edge_index, ss_data.edge_index, hh_data.edge_index, tsid)
+            # outputs = model(sh_edge_index, ss_co, hh_co, tsid)
 
             # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, tsid)
-            dev_loss += (criterion(outputs, thid) + model.calculate_loss())  # .item()
+            dev_loss += (criterion(outputs, thid) + model.calculate_loss()).item()
 
             # thid batch*805
             for i, hid in enumerate(thid):
@@ -280,9 +285,10 @@ def objective(trial):
     for tsid, thid in test_loader:
         # tsid, thid = tsid.float(), thid.float()
         # batch*805 概率矩阵
-        outputs = model(sh_edge_index, ss_co, hh_co, tsid)
+        outputs = model(sh_data.edge_index, ss_data.edge_index, hh_data.edge_index, tsid)
+        # outputs = model(sh_edge_index, ss_co, hh_co, tsid)
 
-        test_loss += criterion(outputs, thid)  # .item()
+        test_loss += criterion(outputs, thid).item()
         # thid batch*805
         for i, hid in enumerate(thid):
             # trueLabel = []  # 对应存在草药的索引

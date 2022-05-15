@@ -148,8 +148,7 @@ class KDHR(torch.nn.Module):
     def forward(self, edge_index_SH, edge_index_SS, edge_index_HH, prescription):
         # S-H图搭建
         # 第一层
-        l = torch.tensor(np.arange(0, 1195), dtype=torch.float32, requires_grad=True, device=device).long()
-        edge_index_SH.to(device)
+        l = torch.tensor(np.arange(0, 1195), dtype=torch.float32, requires_grad=True).to(device).long()
         x_SH1 = self.SH_embedding(l).to(device)
         # x_SH1 = torch.tensor(self.SH_embedding, dtype=torch.float)[self.xID]
 
@@ -172,7 +171,7 @@ class KDHR(torch.nn.Module):
         # # SH H
         # # 0: 草药 1: 症状
         #
-        x_SH11 = self.SH_embedding(l.long())
+        x_SH11 = self.SH_embedding(l.long()).to(device)
         x_SH22 = self.convSH_TostudyS_1_h(x_SH11.float(), edge_index_SH)
         # 第二层
         x_SH66 = self.convSH_TostudyS_2_h(x_SH22, edge_index_SH)
@@ -211,14 +210,15 @@ class KDHR(torch.nn.Module):
         # sum操作
         _, n_u, n_i = self.ProtoNCE_loss()
 
-        self.con_u = self.SameContrast(s_u, n_u, edge_index_SS)
-        self.con_i = self.SameContrast(s_i, n_i, edge_index_HH)
+        # self.con_u = self.SameContrast(s_u, n_u, edge_index_SS)
+        # self.con_i = self.SameContrast(s_i, n_i, edge_index_HH)
         # n_i:805 n_u:390
-        # es = torch.as_tensor(s_u + n_u, device=device)
-        # eh = torch.as_tensor(s_i + n_i, device=device)
+        es = torch.as_tensor(s_u + n_u, device=device)
+        eh = torch.as_tensor(s_i + n_i, device=device)
 
         # SI 集成多个症状为一个症状表示 batch*390 390*dim => batch*dim
-        es = n_u.view(390, -1)
+        es = es.view(390, -1)
+        # es = n_u.view(390, -1)
         e_synd = torch.mm(prescription, es)  # prescription * es
         # batch*1
         preSum = prescription.sum(dim=1).view(-1, 1)
@@ -229,9 +229,10 @@ class KDHR(torch.nn.Module):
         e_synd_norm = self.SI_bn(e_synd_norm)
         e_synd_norm = self.relu(e_synd_norm)  # batch*dim
         # batch*dim dim*805 => batch*805
-        eh = n_i.view(805, -1)
-        pre = torch.mm(e_synd_norm, eh.t())
+        # eh = n_i.view(805, -1)
+        eh = eh.view(805, -1)
 
+        pre = torch.mm(e_synd_norm, eh.t())
         return pre
 
     def ssl_layer_loss(self):  # KDHR的0层和N层
@@ -241,10 +242,10 @@ class KDHR(torch.nn.Module):
         current_user_embeddings, current_item_embeddings = self.c_embedding_0, self.c_embedding_1
         previous_user_embeddings_all, previous_item_embeddings_all = self.p_embedding_0, self.p_embedding_1
 
-        current_item_embeddings = torch.as_tensor(current_item_embeddings, device=device)
-        current_user_embeddings = torch.as_tensor(current_user_embeddings, device=device)
-        previous_user_embeddings_all = torch.as_tensor(previous_user_embeddings_all, device=device)
-        previous_item_embeddings_all = torch.as_tensor(previous_item_embeddings_all, device=device)
+        current_item_embeddings = torch.as_tensor(current_item_embeddings)
+        current_user_embeddings = torch.as_tensor(current_user_embeddings)
+        previous_user_embeddings_all = torch.as_tensor(previous_user_embeddings_all)
+        previous_item_embeddings_all = torch.as_tensor(previous_item_embeddings_all)
 
         current_user_embeddings = current_user_embeddings.view(805, -1)
         current_item_embeddings = current_item_embeddings.view(390, -1)
@@ -259,7 +260,7 @@ class KDHR(torch.nn.Module):
         norm_user_emb1 = F.normalize(current_user_embeddings, dim=0)
         norm_user_emb2 = F.normalize(previous_user_embeddings, dim=0)
 
-        norm_all_user_emb = F.normalize(torch.as_tensor(previous_user_embeddings_all, device=device))
+        norm_all_user_emb = F.normalize(torch.as_tensor(previous_user_embeddings_all))
         # print(norm_all_user_emb)
         pos_score_user = torch.mul(norm_user_emb1, norm_user_emb2).sum(dim=1)
         ttl_score_user = torch.matmul(norm_user_emb1, norm_all_user_emb.transpose(0, 1))
@@ -273,7 +274,7 @@ class KDHR(torch.nn.Module):
         norm_item_emb1 = F.normalize(current_item_embeddings, dim=1)
         norm_item_emb2 = F.normalize(previous_item_embeddings, dim=1)
 
-        norm_all_item_emb = F.normalize(torch.as_tensor(previous_item_embeddings_all, device=device))
+        norm_all_item_emb = F.normalize(torch.as_tensor(previous_item_embeddings_all))
 
         pos_score_item = torch.mul(norm_item_emb1, norm_item_emb2).sum(dim=1)
         ttl_score_item = torch.matmul(norm_item_emb1, norm_all_item_emb.transpose(0, 1))
@@ -285,7 +286,6 @@ class KDHR(torch.nn.Module):
         ssl_loss = self.ssl_reg * (ssl_loss_user + self.alpha * ssl_loss_item)
         return ssl_loss, norm_all_user_emb, norm_all_item_emb
 
-    ## faiss库安装未成功，原始安装应为GPU版的
     def run_kmeans(self, x, dim, _k):
         """Run K-means algorithm to get k clusters of the input tensor x
         """
@@ -298,7 +298,7 @@ class KDHR(torch.nn.Module):
         _, I = kmeans.index.search(x, 1)
 
         # convert to cuda Tensors for broadcast
-        centroids = torch.tensor(cluster_cents, device=device)
+        centroids = torch.tensor(cluster_cents).to(device)
         centroids = F.normalize(centroids, p=2, dim=1)
 
         node2cluster = torch.LongTensor(I).squeeze().to(self.device)
@@ -319,8 +319,8 @@ class KDHR(torch.nn.Module):
         # self.p_embedding = torch.tensor(self.p_embedding)
         user_embeddings_all, item_embeddings_all = self.c_embedding_0, self.c_embedding_1
         # user_embeddings = user_embeddings_all[user]  # [B, e]
-        user_embeddings_all = torch.as_tensor(user_embeddings_all, device=device)
-        item_embeddings_all = torch.as_tensor(item_embeddings_all, device=device)
+        user_embeddings_all = torch.as_tensor(user_embeddings_all)
+        item_embeddings_all = torch.as_tensor(item_embeddings_all)
 
         norm_user_embeddings = F.normalize(user_embeddings_all, dim=0)
         norm_user_embeddings = norm_user_embeddings.view(805, -1)
@@ -389,10 +389,10 @@ class KDHR(torch.nn.Module):
         print(ssl_loss)
         nce_loss, self.nce_u, self.nce_i = self.ProtoNCE_loss()
         print(nce_loss)
-        contrast_loss = self.con_reg * torch.as_tensor(self.con_i + self.con_u, device=device).float()
-        print(contrast_loss)
+        # contrast_loss = self.con_reg * torch.as_tensor(self.con_i + self.con_u, device=device).float()
+        # print(contrast_loss)
 
-        return ssl_loss + nce_loss + contrast_loss
+        return ssl_loss + nce_loss #+ contrast_loss
 
     def sim(self, z1, z2):
         z1_norm = torch.norm(z1, dim=-1, keepdim=True)
