@@ -60,7 +60,7 @@ class GCNConv_SS_HH(MessagePassing):
 
 
 class KDHR(torch.nn.Module):
-    def __init__(self, ss_num, hh_num, sh_num, embedding_dim, batchSize, drop):
+    def __init__(self, ss_num, hh_num, sh_num, embedding_dim, edge_matrix_1, edge_matrix_2, batchSize, drop):
         super(KDHR, self).__init__()
         # if trail:
         #     pass
@@ -77,6 +77,7 @@ class KDHR(torch.nn.Module):
 
         self.c_embedding_0 = []
         self.c_embedding_1 = []
+
         self.ssl_temp = 0.5
         self.ssl_reg = 1e-6
         self.alpha = 1.5
@@ -99,6 +100,9 @@ class KDHR(torch.nn.Module):
         self.userID = torch.linspace(0, 804, 805).long()
         self.itemID = torch.linspace(0, 389, 390).long()
         self.xID = torch.linspace(0, 1194, 1195).long()
+
+        self.edge_u = edge_matrix_1
+        self.edge_i = edge_matrix_2
 
         # S-H 图所需的网络
         # S
@@ -209,16 +213,21 @@ class KDHR(torch.nn.Module):
 
         # sum操作
         _, n_u, n_i = self.ProtoNCE_loss()
+        self.ssl_u = s_u
+        self.nce_u = n_u
+        self.ssl_i = s_i
+        self.nce_i = n_i
+        _, c_u, c_i = self.Same2Loss()
 
         # self.con_u = self.SameContrast(s_u, n_u, edge_index_SS)
         # self.con_i = self.SameContrast(s_i, n_i, edge_index_HH)
         # n_i:805 n_u:390
-        es = torch.as_tensor(s_u + n_u, device=device)
-        eh = torch.as_tensor(s_i + n_i, device=device)
+        # es = torch.as_tensor(s_u + n_u, device=device)
+        # eh = torch.as_tensor(s_i + n_i, device=device)
 
         # SI 集成多个症状为一个症状表示 batch*390 390*dim => batch*dim
-        es = es.view(390, -1)
-        # es = n_u.view(390, -1)
+        # es = es.view(390, -1)
+        es = c_u.view(390, -1)
         e_synd = torch.mm(prescription, es)  # prescription * es
         # batch*1
         preSum = prescription.sum(dim=1).view(-1, 1)
@@ -229,8 +238,8 @@ class KDHR(torch.nn.Module):
         e_synd_norm = self.SI_bn(e_synd_norm)
         e_synd_norm = self.relu(e_synd_norm)  # batch*dim
         # batch*dim dim*805 => batch*805
-        # eh = n_i.view(805, -1)
-        eh = eh.view(805, -1)
+        eh = c_i.view(805, -1)
+        # eh = eh.view(805, -1)
 
         pre = torch.mm(e_synd_norm, eh.t())
         return pre
@@ -349,51 +358,6 @@ class KDHR(torch.nn.Module):
         proto_nce_loss = self.proto_reg * (proto_nce_loss_user + proto_nce_loss_item)
         return proto_nce_loss, norm_item_embeddings, norm_user_embeddings
 
-    def calculate_loss(self):
-        # clear the storage variable when training
-        # if self.restore_user_e is not None or self.restore_item_e is not None:
-        #     self.restore_user_e, self.restore_item_e = None, None
-
-        # current_user_embeddings, current_item_embeddings = self.c_embedding_0, self.c_embedding_1
-        # previous_user_embeddings_all, previous_item_embeddings_all = self.p_embedding_0, self.p_embedding_1
-        # pos_item = interaction[self.ITEM_ID]
-        # neg_item = interaction[self.NEG_ITEM_ID]
-
-        # user_all_embeddings, item_all_embeddings, embeddings_list = self.forward()
-
-        # center_embedding = embeddings_list[0]
-        # context_embedding = embeddings_list[self.hyper_layers * 2]
-        #
-        # ssl_loss = self.ssl_layer_loss(context_embedding, center_embedding, user, item)
-        # proto_loss = self.ProtoNCE_loss(center_embedding, user, item)
-        #
-        # u_embeddings = user_all_embeddings[user]
-        # i_embedding = item_all_embeddings[item]
-        # pos_embeddings = item_all_embeddings[pos_item]
-        # neg_embeddings = item_all_embeddings[neg_item]
-
-        # calculate BPR Loss
-        # pos_scores = torch.mul(u_embeddings, pos_embeddings).sum(dim=1)
-        # neg_scores = torch.mul(u_embeddings, neg_embeddings).sum(dim=1)
-
-        # mf_loss = self.mf_loss(pos_scores, neg_scores)
-        #
-        # u_ego_embeddings = self.user_embedding(user)
-        # pos_ego_embeddings = self.item_embedding(pos_item)
-        # neg_ego_embeddings = self.item_embedding(neg_item)
-        #
-        # reg_loss = self.reg_loss(u_ego_embeddings, pos_ego_embeddings, neg_ego_embeddings)
-
-        # return mf_loss + self.reg_weight * reg_loss, ssl_loss, proto_loss
-        ssl_loss, self.ssl_u, self.ssl_i = self.ssl_layer_loss()
-        print(ssl_loss)
-        nce_loss, self.nce_u, self.nce_i = self.ProtoNCE_loss()
-        print(nce_loss)
-        # contrast_loss = self.con_reg * torch.as_tensor(self.con_i + self.con_u, device=device).float()
-        # print(contrast_loss)
-
-        return ssl_loss + nce_loss #+ contrast_loss
-
     def sim(self, z1, z2):
         z1_norm = torch.norm(z1, dim=-1, keepdim=True)
         z2_norm = torch.norm(z2, dim=-1, keepdim=True)
@@ -407,10 +371,29 @@ class KDHR(torch.nn.Module):
         z_proj_sc = self.proj(emb2)
         matrix_mp2sc = self.sim(z_proj_mp, z_proj_sc)
         matrix_sc2mp = matrix_mp2sc.t()
-
         matrix_mp2sc = matrix_mp2sc / (torch.sum(matrix_mp2sc, dim=1).view(-1, 1) + 1e-8)
-        lori_mp = -torch.log(matrix_mp2sc.mul(pos.to_dense()).sum(dim=-1)).mean()
+        lori_mp = -torch.log(matrix_mp2sc.mul(pos + 1e-13).sum(dim=-1)).mean()
 
         matrix_sc2mp = matrix_sc2mp / (torch.sum(matrix_sc2mp, dim=1).view(-1, 1) + 1e-8)
-        lori_sc = -torch.log(matrix_sc2mp.mul(pos.to_dense()).sum(dim=-1)).mean()
-        return self.lam * lori_mp + (1 - self.lam) * lori_sc
+        lori_sc = -torch.log(matrix_sc2mp.mul(pos + 1e-13).sum(dim=-1)).mean()
+
+        return self.lam * lori_mp + (1 - self.lam) * lori_sc, emb1, emb2
+
+    def Same2Loss(self):
+
+        same_loss_user, _, __ = self.SameContrast(self.ssl_u, self.nce_u, self.edge_u)
+        same_loss_item, _, __ = self.SameContrast(self.ssl_i, self.nce_i, self.edge_i)
+        user = torch.as_tensor(self.ssl_u + self.nce_u)
+        item = torch.as_tensor(self.ssl_i + self.nce_i)
+        return self.con_reg * torch.as_tensor(same_loss_user + same_loss_item), user, item
+
+    def calculate_loss(self):
+        ssl_loss, self.ssl_i, self.ssl_u = self.ssl_layer_loss()
+        print(ssl_loss)
+        nce_loss, self.nce_u, self.nce_i = self.ProtoNCE_loss()
+        print(nce_loss)
+        # contrast_loss = self.con_reg * torch.as_tensor(self.con_i + self.con_u, device=device).float()
+        con_loss, self.con_u, self.con_i = self.Same2Loss()
+        print(con_loss)
+
+        return ssl_loss + nce_loss + con_loss

@@ -17,6 +17,7 @@ import torch
 from torch_geometric.data import Data
 from sklearn.model_selection import train_test_split
 from pytorchtools import EarlyStopping
+from load import table2mat
 import time
 from sklearn.metrics import roc_auc_score
 import types
@@ -63,20 +64,35 @@ sh_data = Data(x=sh_x, edge_index=sh_edge_index.t().contiguous())  ### 制图
 #                            sparse_sizes=(1195, 1195))  ### 邻接矩阵
 # S-S G
 ss_edge = np.load('./data/ss_graph.npy')
-ss_edge = ss_edge.tolist()
-ss_edge_index = torch.tensor(ss_edge, dtype=torch.long)
-ss_x = torch.tensor([[i] for i in range(390)], dtype=torch.float)
-ss_data = Data(x=ss_x, edge_index=ss_edge_index.t().contiguous())
+ss_edge_adj = np.array(ss_edge)
+ss_edge_adj = table2mat(ss_edge_adj, 390)
+# ss_edge = ss_edge.tolist()
+# ss_edge_index = torch.tensor(ss_edge, dtype=torch.long)
+# ss_x = torch.tensor([[i] for i in range(390)], dtype=torch.float)
+# ss_data = Data(x=ss_x, edge_index=ss_edge_index.t().contiguous())
+
 # ss_data_adj = SparseTensor(row=ss_data.edge_index[0], col=ss_data.edge_index[1],
 #                            sparse_sizes=(390, 390))
+# x_ss = ss_data.x.shape[0]
+# ss_edge_shape = np.zeros((x_ss, x_ss)).shape
+# values = torch.tensor(np.ones(ss_data.edge_index.shape[1]), dtype=torch.long)
+# ss_edge = torch.sparse_coo_tensor(ss_data.edge_index, values, ss_edge_shape)
 
 # H-H G
-hh_edge = np.load('./data/hh_graph.npy').tolist()
-hh_edge_index = torch.tensor(hh_edge, dtype=torch.long) - 390  # 边索引需要减去390
-hh_x = torch.tensor([[i] for i in range(390, 1195)], dtype=torch.float)
-hh_data = Data(x=hh_x, edge_index=hh_edge_index.t().contiguous())
+hh_edge = np.load('./data/hh_graph.npy')
+hh_edge_adj = hh_edge - 390
+hh_edge_adj = table2mat(hh_edge_adj, 805)
+# hh_edge = hh_edge.tolist()
+# hh_edge_index = torch.tensor(hh_edge, dtype=torch.long) - 390  # 边索引需要减去390
+# hh_x = torch.tensor([[i] for i in range(390, 1195)], dtype=torch.float)
+# hh_data = Data(x=hh_x, edge_index=hh_edge_index.t().contiguous())
+
 # hh_data_adj = SparseTensor(row=hh_data.edge_index[0], col=hh_data.edge_index[1],
 #                            sparse_sizes=(805, 805))
+# x_hh = hh_data.x.shape[0]
+# hh_edge_shape = np.zeros((x_hh, x_hh)).shape
+# values = torch.tensor(np.ones(hh_data.edge_index.shape[1]), dtype=torch.long)
+# hh_edge = torch.sparse_coo_tensor(hh_data.edge_index, values, hh_edge_shape)
 #
 # ss_co = torch.from_numpy(np.load('./ss_pos.npy')).to(device)
 # hh_co = torch.from_numpy(np.load('./hh_pos.npy')).to(device)
@@ -110,7 +126,11 @@ for i in range(pLen):
 # # 读取KG中知识的独热编码
 # kg_oneHot = np.load('./data/herb_805_27_oneHot.npy')
 # kg_oneHot = torch.from_numpy(kg_oneHot).float()
-para = parameter.para(lr=0.056, rec=3e-4, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
+para = parameter.para(lr=0.06, rec=5e-5, drop=0.0, batchSize=8192, epoch=500, dev_ratio=0.2, test_ratio=0.2)
+
+# para = parameter.para(lr=0.056, rec=1e-4, drop=0.0, batchSize=8192, epoch=500, dev_ratio=0.2, test_ratio=0.2)
+# para = parameter.para(lr=0.05, rec=3e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
+
 path = os.path.abspath(os.path.dirname(__file__))
 type = sys.getfilesystemencoding()
 sys.stdout = Logger('khdr.txt')
@@ -139,7 +159,7 @@ test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=para.batchSiz
 
 # model = KDHR(390, 805, 1195, 64, params)
 
-model = KDHR(390, 805, 1195, 64, para.batchSize, para.drop).to(device)
+
 # model = KDHR(390, 805, 1195, 64)
 
 criterion = torch.nn.BCEWithLogitsLoss(reduction="mean").to(device)
@@ -148,9 +168,10 @@ early_stopping = EarlyStopping(patience=7, verbose=True)
 
 epsilon = 1e-13
 
-ss_data.edge_index = ss_data.edge_index.to(device)
-hh_data.edge_index = hh_data.edge_index.to(device)
+hh_edge_adj = torch.as_tensor(hh_edge_adj).to(device)
+ss_edge_adj = torch.as_tensor(ss_edge_adj).to(device)
 sh_data.edge_index = sh_data.edge_index.to(device)
+model = KDHR(390, 805, 1195, 64, ss_edge_adj, hh_edge_adj, para.batchSize, para.drop).to(device)
 
 
 def objective(trial):
@@ -174,7 +195,7 @@ def objective(trial):
             # sid, hid = sid.float().to(device), hid.float().to(device)
             optimizer.zero_grad()
             # batch*805 概率矩阵
-            outputs = model(sh_data.edge_index, ss_data.edge_index, hh_data.edge_index, sid)
+            outputs = model(sh_data.edge_index, ss_edge_adj, hh_edge_adj, sid)
             # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, sid)
             loss = criterion(outputs, hid) + model.calculate_loss()
             loss = loss.to(device)
@@ -203,7 +224,7 @@ def objective(trial):
         for tsid, thid in dev_loader:
             # tsid, thid = tsid.float().to(device), thid.float().to(device)
             # batch*805 概率矩阵
-            outputs = model(sh_data.edge_index, ss_data.edge_index, hh_data.edge_index, tsid)
+            outputs = model(sh_data.edge_index, ss_edge_adj, hh_edge_adj, tsid)
             # outputs = model(sh_edge_index, ss_co, hh_co, tsid)
 
             # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, tsid)
@@ -285,7 +306,7 @@ def objective(trial):
     for tsid, thid in test_loader:
         # tsid, thid = tsid.float(), thid.float()
         # batch*805 概率矩阵
-        outputs = model(sh_data.edge_index, ss_data.edge_index, hh_data.edge_index, tsid)
+        outputs = model(sh_data.edge_index, ss_edge, hh_edge, tsid)
         # outputs = model(sh_edge_index, ss_co, hh_co, tsid)
 
         test_loss += criterion(outputs, thid).item()
