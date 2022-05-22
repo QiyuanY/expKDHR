@@ -126,8 +126,9 @@ for i in range(pLen):
 # # 读取KG中知识的独热编码
 # kg_oneHot = np.load('./data/herb_805_27_oneHot.npy')
 # kg_oneHot = torch.from_numpy(kg_oneHot).float()
-para = parameter.para(lr=0.06, rec=5e-5, drop=0.0, batchSize=8192, epoch=500, dev_ratio=0.2, test_ratio=0.2)
+para = parameter.para(lr=0.056, rec=1e-4, drop=0.0, batchSize=8192, epoch=500, dev_ratio=0.2, test_ratio=0.2)
 
+print(para.lr, para.rec)
 # para = parameter.para(lr=0.056, rec=1e-4, drop=0.0, batchSize=8192, epoch=500, dev_ratio=0.2, test_ratio=0.2)
 # para = parameter.para(lr=0.05, rec=3e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
 

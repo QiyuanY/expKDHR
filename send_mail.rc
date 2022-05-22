@@ -1,0 +1,6 @@
+set bsdcompat
+set from=XX.com.cn
+set smtp=10.XX.XX.XX
+set smtp-auth-user=XX.com.cn
+set smtp-auth-password=*****
+set smtp-auth=login

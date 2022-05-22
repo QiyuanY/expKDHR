@@ -78,7 +78,7 @@ class KDHR(torch.nn.Module):
         self.c_embedding_0 = []
         self.c_embedding_1 = []
 
-        self.ssl_temp = 0.5
+        self.ssl_temp = 0.45
         self.ssl_reg = 1e-6
         self.alpha = 1.5
         self.latent_dim = 64
