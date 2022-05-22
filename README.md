@@ -8,8 +8,6 @@ The basic environment is Ubuntu 18.04 so that torch-1.5.0+cu102 can fit our expe
 
 The main aim of this experiment:
 >Ablation learning
->
->Homogeneous build contrastive learning
 
 # Required packages
 
