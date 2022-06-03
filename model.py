@@ -78,7 +78,7 @@ class KDHR(torch.nn.Module):
         self.c_embedding_0 = []
         self.c_embedding_1 = []
 
-        self.ssl_temp = 0.45
+        self.ssl_temp = 0.5
         self.ssl_reg = 1e-6
         self.alpha = 1.5
         self.latent_dim = 64
@@ -87,6 +87,7 @@ class KDHR(torch.nn.Module):
         self.proto_reg = 8e-8
         self.con_reg = 0.1
         self.device = device
+        self.g = []
 
         self.ssl_u, self.ssl_i = [], []
         self.nce_u, self.nce_i = [], []
@@ -112,8 +113,8 @@ class KDHR(torch.nn.Module):
 
         # self.convSH_TostudyS_3 = GCNConv_SH(embedding_dim, embedding_dim)
 
-        self.SH_mlp_1 = torch.nn.Linear(embedding_dim, 256)
-        self.SH_bn_1 = torch.nn.BatchNorm1d(256)
+        self.SH_mlp_1 = torch.nn.Linear(embedding_dim, 64)
+        self.SH_bn_1 = torch.nn.BatchNorm1d(64)
         self.SH_tanh_1 = torch.nn.Tanh()
         # H
         self.convSH_TostudyS_1_h = GCNConv_SH(embedding_dim, embedding_dim)
@@ -122,15 +123,10 @@ class KDHR(torch.nn.Module):
 
         # self.convSH_TostudyS_3_h = GCNConv_SH(embedding_dim, embedding_dim)
 
-        self.SH_mlp_1_h = torch.nn.Linear(embedding_dim, 256)
-        self.SH_bn_1_h = torch.nn.BatchNorm1d(256)
+        self.SH_mlp_1_h = torch.nn.Linear(embedding_dim, 64)
+        self.SH_bn_1_h = torch.nn.BatchNorm1d(64)
         self.SH_tanh_1_h = torch.nn.Tanh()
-        # # S-S图网络
-        # self.convSS = GCNConv_SS_HH(embedding_dim, 256)
-        # # H-H图网络  维度加上嵌入KG特征的维度
-        # self.convHH = GCNConv_SS_HH(embedding_dim+27, 256)
-        # # self.convHH = GCNConv_SS_HH(embedding_dim, 256)
-        # SI诱导层
+
         # SUM
         self.mlp = torch.nn.Linear(embedding_dim, 64)
         # cat
@@ -149,85 +145,34 @@ class KDHR(torch.nn.Module):
             if isinstance(model, torch.nn.Linear):
                 torch.nn.init.xavier_normal_(model.weight, gain=1.414)
 
-    def forward(self, edge_index_SH, edge_index_SS, edge_index_HH, prescription):
+    def forward(self, edge_index_SH, prescription):
         # S-H图搭建
-        # 第一层
         l = torch.tensor(np.arange(0, 1195), dtype=torch.float32, requires_grad=True).to(device).long()
         x_SH1 = self.SH_embedding(l).to(device)
-        # x_SH1 = torch.tensor(self.SH_embedding, dtype=torch.float)[self.xID]
-
-        # 这里的x_SH2和下边的x_SH22有区别，目前不知道什么原因
+        # 第一层
         x_SH2 = self.convSH_TostudyS_1(x_SH1.float(), edge_index_SH)
         # 第二层
         x_SH6 = self.convSH_TostudyS_2(x_SH2, edge_index_SH)
-        # # x_SH1 = self.x_SH1.requires_grad_(True)
-        # # x_SH6 = x_SH6.requires_grad_(True)
-        # # x_SH6 = x_SH6.view(-1, 256)
-        # # 第三层
-        # # x_SH7 = self.convSH_TostudyS_3(x_SH6, edge_index_SH)
-        #
-        # # x_SH9 = (x_SH1 + x_SH2 + x_SH6 ) / 3.0
-        # # x_SH9 = self.SH_mlp_1(x_SH9)
-        # # x_SH9 = x_SH9.view(1195, -1)
-        # # x_SH9 = self.SH_bn_1(x_SH9)
-        # # x_SH9 = self.SH_tanh_1(x_SH9)
-        #
-        # # SH H
-        # # 0: 草药 1: 症状
-        #
-        x_SH11 = self.SH_embedding(l.long()).to(device)
-        x_SH22 = self.convSH_TostudyS_1_h(x_SH11.float(), edge_index_SH)
-        # 第二层
-        x_SH66 = self.convSH_TostudyS_2_h(x_SH22, edge_index_SH)
-        # x_SH11 = self.x_SH11.requires_grad_(True)
-        # x_SH66 = x_SH66.requires_grad_(True)
-        # x_SH66 = x_SH66.view(-1, 256)
-        self.p_embedding_0, self.p_embedding_1 = torch.split(x_SH11, [805, 390])
+
+        self.p_embedding_0, self.p_embedding_1 = torch.split(x_SH1, [805, 390])
         self.c_embedding_0, self.c_embedding_1 = torch.split(x_SH6, [805, 390])
-
-        _, s_i, s_u = self.ssl_layer_loss()
-        # s_i:805, s_u:390
-        # 第三层
-        # x_SH77 = self.convSH_TostudyS_3_h(x_SH66, edge_index_SH)
-
-        # x_SH99 = (x_SH11 + x_SH22 +x_SH66 ) / 3.0
-        # x_SH99 = self.SH_mlp_1_h(x_SH99)
-        # x_SH99 = x_SH99.view(1195, -1)
-        # x_SH99 = self.SH_bn_1_h(x_SH99)
-        # x_SH99 = self.SH_tanh_1_h(x_SH99)
-
-        # # S-S图搭建
-        # x_ss0 = self.SH_embedding(x_SS.long())
-        # # = self.convSS(x_ss0.float(), edge_index_SS) # S_S图中 s的嵌入
-        # x_loss_ss, s_lossemb = self.same2ssl(x_ss0, edge_index_SS)
-        # x_ss1 = x_ss0.view(390, -1)
-        # # H-H图搭建
-        # x_hh0 = self.SH_embedding(x_HH.long())
-        # x_hh0 = x_hh0.view(-1, 64)
-        # # x_hh0 = torch.cat((x_hh0.float(), kgOneHot), dim=-1)
-        # x_loss_hh, h_lossemb = self.same2ssl(x_hh0, edge_index_HH)
-        # # x_hh1 = self.convHH(x_hh0.float(), edge_index_HH)  # H_H图中 h的嵌入
-        # x_hh1 = x_hh0.view(805, -1)
-
-        # 信息融合
-
         # sum操作
-        _, n_u, n_i = self.ProtoNCE_loss()
+        _, s_i, s_u = self.ssl_layer_loss()
+        # _, n_u, n_i = self.ProtoNCE_loss()
+        _, n_i, n_u = self.high_loss()
         self.ssl_u = s_u
         self.nce_u = n_u
         self.ssl_i = s_i
         self.nce_i = n_i
-        _, c_u, c_i = self.Same2Loss()
+        # _, c_u, c_i = self.Same2Loss()
 
-        # self.con_u = self.SameContrast(s_u, n_u, edge_index_SS)
-        # self.con_i = self.SameContrast(s_i, n_i, edge_index_HH)
         # n_i:805 n_u:390
-        # es = torch.as_tensor(s_u + n_u, device=device)
-        # eh = torch.as_tensor(s_i + n_i, device=device)
+        es = torch.as_tensor(s_u + n_u, device=device)
+        eh = torch.as_tensor(s_i + n_i, device=device)
 
         # SI 集成多个症状为一个症状表示 batch*390 390*dim => batch*dim
-        # es = es.view(390, -1)
-        es = c_u.view(390, -1)
+        es = es.view(390, -1)
+        # es = c_u.view(390, -1)
         e_synd = torch.mm(prescription, es)  # prescription * es
         # batch*1
         preSum = prescription.sum(dim=1).view(-1, 1)
@@ -238,62 +183,68 @@ class KDHR(torch.nn.Module):
         e_synd_norm = self.SI_bn(e_synd_norm)
         e_synd_norm = self.relu(e_synd_norm)  # batch*dim
         # batch*dim dim*805 => batch*805
-        eh = c_i.view(805, -1)
-        # eh = eh.view(805, -1)
+        # eh = c_i.view(805, -1)
+        eh = eh.view(805, -1)
 
         pre = torch.mm(e_synd_norm, eh.t())
         return pre
 
-    def ssl_layer_loss(self):  # KDHR的0层和N层
-        # self.c_embedding_0 = torch.tensor(self.c_embedding_0)
-        # self.p_embedding_0 = torch.tensor(self.p_embedding_0)
+    def con_loss(self, emb1, emb2, emb_all, model):
+        """
 
+        :param emb1:
+        :param emb2:
+        :param emb_all: 其他所有embeddings
+        :param model:选择进行的对比学习方式（公式不同）
+        :return:对比学习的loss
+        """
+        res = 0
+        pos_score = torch.mul(emb1, emb2).sum(dim=1)
+        ttl_score = torch.matmul(emb1, emb_all.transpose(0, 1))
+
+        if model == 'high':
+            # 分子分母分别累加
+            pos_score = torch.exp(pos_score / self.ssl_temp).sum()
+            ttl_score = torch.exp(ttl_score / self.ssl_temp).sum()  # 这里有个地方没搞懂
+
+            res = -torch.log(pos_score / ttl_score)
+        elif model == 'ssl':
+            # 分母累加后结果累加
+            pos_score = torch.exp(pos_score / self.ssl_temp)
+            ttl_score = torch.exp(ttl_score / self.ssl_temp).sum(dim=1)
+
+            res = -torch.log(pos_score / ttl_score).sum()
+
+        return res
+
+    def ssl_layer_loss(self):  # KDHR的0层和N层
+        """
+        其中的含dim的Norm函数所执行的操作是将emb格式转换为tensor格式并进行正则，如果没有给定dim，则只进行正则，其中n_dim表示对不同的维度进行正则
+        :return:
+        """
+        model = 'ssl'
         current_user_embeddings, current_item_embeddings = self.c_embedding_0, self.c_embedding_1
         previous_user_embeddings_all, previous_item_embeddings_all = self.p_embedding_0, self.p_embedding_1
 
-        current_item_embeddings = torch.as_tensor(current_item_embeddings)
-        current_user_embeddings = torch.as_tensor(current_user_embeddings)
-        previous_user_embeddings_all = torch.as_tensor(previous_user_embeddings_all)
-        previous_item_embeddings_all = torch.as_tensor(previous_item_embeddings_all)
+        current_user_embeddings = self.Norm(current_user_embeddings[self.userID], 805, n_dim=0)
+        current_item_embeddings = self.Norm(current_item_embeddings[self.itemID], 390, n_dim=1)
+        previous_user_embeddings_all = self.Norm(previous_user_embeddings_all[self.userID], 805, n_dim=0)
+        previous_item_embeddings_all = self.Norm(previous_item_embeddings_all[self.itemID], 390, n_dim=1)
+        # norm_all_user_emb = previous_user_embeddings_all
+        # norm_all_item_emb = previous_item_embeddings_all
+        norm_user_emb1, norm_user_emb2 = current_user_embeddings, previous_user_embeddings_all
+        norm_item_emb1, norm_item_emb2 = current_item_embeddings, previous_item_embeddings_all
 
-        current_user_embeddings = current_user_embeddings.view(805, -1)
-        current_item_embeddings = current_item_embeddings.view(390, -1)
-        previous_user_embeddings_all = previous_user_embeddings_all.view(805, -1)
-        previous_item_embeddings_all = previous_item_embeddings_all.view(390, -1)
+        # norm_user_emb1 = self.Norm(current_user_embeddings[self.userID], n_dim=0)
+        # norm_user_emb2 = self.Norm(previous_user_embeddings_all[self.userID], n_dim=0)
+        ssl_loss_user = self.con_loss(norm_user_emb1, norm_user_emb2, previous_user_embeddings_all, model=model)
 
-        current_user_embeddings = current_user_embeddings[self.userID]
-        # print(previous_user_embeddings_all)
-        previous_user_embeddings = previous_user_embeddings_all[self.userID]
-        # print(previous_user_embeddings)
-
-        norm_user_emb1 = F.normalize(current_user_embeddings, dim=0)
-        norm_user_emb2 = F.normalize(previous_user_embeddings, dim=0)
-
-        norm_all_user_emb = F.normalize(torch.as_tensor(previous_user_embeddings_all))
-        # print(norm_all_user_emb)
-        pos_score_user = torch.mul(norm_user_emb1, norm_user_emb2).sum(dim=1)
-        ttl_score_user = torch.matmul(norm_user_emb1, norm_all_user_emb.transpose(0, 1))
-        pos_score_user = torch.exp(pos_score_user / self.ssl_temp)
-        ttl_score_user = torch.exp(ttl_score_user / self.ssl_temp).sum(dim=1)
-
-        ssl_loss_user = -torch.log(pos_score_user / ttl_score_user).sum()
-
-        current_item_embeddings = current_item_embeddings[self.itemID]
-        previous_item_embeddings = previous_item_embeddings_all[self.itemID]
-        norm_item_emb1 = F.normalize(current_item_embeddings, dim=1)
-        norm_item_emb2 = F.normalize(previous_item_embeddings, dim=1)
-
-        norm_all_item_emb = F.normalize(torch.as_tensor(previous_item_embeddings_all))
-
-        pos_score_item = torch.mul(norm_item_emb1, norm_item_emb2).sum(dim=1)
-        ttl_score_item = torch.matmul(norm_item_emb1, norm_all_item_emb.transpose(0, 1))
-        pos_score_item = torch.exp(pos_score_item / self.ssl_temp)
-        ttl_score_item = torch.exp(ttl_score_item / self.ssl_temp).sum(dim=1)
-
-        ssl_loss_item = -torch.log(pos_score_item / ttl_score_item).sum()
+        # norm_item_emb1 = self.Norm(current_item_embeddings[self.itemID], n_dim=1)
+        # norm_item_emb2 = self.Norm(previous_item_embeddings_all[self.itemID], n_dim=1)
+        ssl_loss_item = self.con_loss(norm_item_emb1, norm_item_emb2, previous_item_embeddings_all, model=model)
 
         ssl_loss = self.ssl_reg * (ssl_loss_user + self.alpha * ssl_loss_item)
-        return ssl_loss, norm_all_user_emb, norm_all_item_emb
+        return ssl_loss, norm_user_emb2, norm_item_emb2
 
     def run_kmeans(self, x, dim, _k):
         """Run K-means algorithm to get k clusters of the input tensor x
@@ -372,6 +323,7 @@ class KDHR(torch.nn.Module):
         matrix_mp2sc = self.sim(z_proj_mp, z_proj_sc)
         matrix_sc2mp = matrix_mp2sc.t()
         matrix_mp2sc = matrix_mp2sc / (torch.sum(matrix_mp2sc, dim=1).view(-1, 1) + 1e-8)
+        # pos 不可用，学习上边的分母构造方法
         lori_mp = -torch.log(matrix_mp2sc.mul(pos + 1e-13).sum(dim=-1)).mean()
 
         matrix_sc2mp = matrix_sc2mp / (torch.sum(matrix_sc2mp, dim=1).view(-1, 1) + 1e-8)
@@ -379,8 +331,17 @@ class KDHR(torch.nn.Module):
 
         return self.lam * lori_mp + (1 - self.lam) * lori_sc, emb1, emb2
 
-    def Same2Loss(self):
+    def findID(self):
+        """
 
+        :return: user[1:2] item[1:2]
+        """
+        h_index = np.nonzero(self.edge_i)
+        s_index = np.nonzero(self.edge_u)
+
+        return s_index[0], s_index[1], h_index[0], h_index[1]
+
+    def Same2Loss(self):
         same_loss_user, _, __ = self.SameContrast(self.ssl_u, self.nce_u, self.edge_u)
         same_loss_item, _, __ = self.SameContrast(self.ssl_i, self.nce_i, self.edge_i)
         user = torch.as_tensor(self.ssl_u + self.nce_u)
@@ -388,12 +349,52 @@ class KDHR(torch.nn.Module):
         return self.con_reg * torch.as_tensor(same_loss_user + same_loss_item), user, item
 
     def calculate_loss(self):
-        ssl_loss, self.ssl_i, self.ssl_u = self.ssl_layer_loss()
-        print(ssl_loss)
-        nce_loss, self.nce_u, self.nce_i = self.ProtoNCE_loss()
-        print(nce_loss)
-        # contrast_loss = self.con_reg * torch.as_tensor(self.con_i + self.con_u, device=device).float()
-        con_loss, self.con_u, self.con_i = self.Same2Loss()
-        print(con_loss)
+        """
 
-        return ssl_loss + nce_loss + con_loss
+        :return: ssl + high
+        """
+        ssl_loss, self.ssl_i, self.ssl_u = self.ssl_layer_loss()
+        # print(ssl_loss)
+        high_loss, self.nce_u, self.nce_i = self.high_loss()
+        # print(high_loss)
+        # nce_loss, self.nce_u, self.nce_i = self.ProtoNCE_loss()
+        # print(nce_loss)
+        # contrast_loss = self.con_reg * torch.as_tensor(self.con_i + self.con_u, device=device).float()
+        # con_loss, self.con_u, self.con_i = self.Same2Loss()
+        # print(con_loss)
+
+        # return nce_loss + con_loss
+
+        return ssl_loss + high_loss
+
+    def Norm(self, emb, dim=0, n_dim=0):
+        """
+        :param emb: 需要正则的emb
+        :param dim: 该emb维度
+        :param n_dim: 需要对第n维度进行正则(这里user为0，item为1)
+        :return: 正则后的emb
+        """
+        res_emb = emb
+        if not torch.is_tensor(res_emb):
+            res_emb = torch.as_tensor(res_emb, device=device).view(dim, -1)
+        res_emb = F.normalize(res_emb, dim=n_dim)
+
+        return res_emb
+
+    def high_loss(self):
+        """
+        :return:loss, user, item
+        """
+        model = 'high'
+        index_1, index_2, index_3, index_4 = self.findID()
+        user_norm = self.Norm(self.c_embedding_0, dim=805, n_dim=0)
+        item_norm = self.Norm(self.c_embedding_1, dim=390, n_dim=1)
+        user_emb1, user_emb2 = user_norm[index_1], user_norm[index_2]
+        item_emb1, item_emb2 = item_norm[index_3], item_norm[index_4]
+
+        ssl_loss_user = self.con_loss(user_emb1, user_emb2, user_norm, model=model)
+        ssl_loss_item = self.con_loss(item_emb1, item_emb2, item_norm, model=model)
+
+        high_loss = self.ssl_reg * (ssl_loss_user + self.alpha * ssl_loss_item)
+
+        return high_loss, user_norm, item_norm

@@ -10,19 +10,11 @@ import sys
 import os
 import optuna
 import parameter
-import numpy as np
-import pandas as pd
-import random
 import torch
-from torch_geometric.data import Data
-from sklearn.model_selection import train_test_split
 from pytorchtools import EarlyStopping
 from load import table2mat
 import time
-from sklearn.metrics import roc_auc_score
-import types
-from torch_sparse import SparseTensor
-from torch import cuda
+from load_data import DataLoad
 
 # import Lr_auto
 
@@ -30,12 +22,6 @@ seed = 2021512
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(device)
 
-
-# np.random.seed(seed)
-# if torch.cuda.is_available():
-#     torch.cuda.manual_seed(seed)
-#     torch.cuda.manual_seed_all(seed)
-# torch.manual_seed(seed)
 
 class Logger(object):
     def __init__(self, filename="Default.log"):
@@ -50,118 +36,24 @@ class Logger(object):
         pass
 
 
-# para = parameter.para(lr=3e-4, rec=7e-3, drop=0.0, batchSize=512, epoch=200, dev_ratio=0.2, test_ratio=0.2)
-
-
-"""创建3种图数据"""
-# 读取S-H图
-sh_edge = np.load('./data/sh_graph.npy')
-sh_edge = sh_edge.tolist()
-sh_edge_index = torch.tensor(sh_edge, dtype=torch.long)
-sh_x = torch.tensor([[i] for i in range(1195)], dtype=torch.float)
-sh_data = Data(x=sh_x, edge_index=sh_edge_index.t().contiguous())  ### 制图
-# sh_data_adj = SparseTensor(row=sh_data.edge_index[0], col=sh_data.edge_index[1],
-#                            sparse_sizes=(1195, 1195))  ### 邻接矩阵
-# S-S G
-ss_edge = np.load('./data/ss_graph.npy')
-ss_edge_adj = np.array(ss_edge)
-ss_edge_adj = table2mat(ss_edge_adj, 390)
-# ss_edge = ss_edge.tolist()
-# ss_edge_index = torch.tensor(ss_edge, dtype=torch.long)
-# ss_x = torch.tensor([[i] for i in range(390)], dtype=torch.float)
-# ss_data = Data(x=ss_x, edge_index=ss_edge_index.t().contiguous())
-
-# ss_data_adj = SparseTensor(row=ss_data.edge_index[0], col=ss_data.edge_index[1],
-#                            sparse_sizes=(390, 390))
-# x_ss = ss_data.x.shape[0]
-# ss_edge_shape = np.zeros((x_ss, x_ss)).shape
-# values = torch.tensor(np.ones(ss_data.edge_index.shape[1]), dtype=torch.long)
-# ss_edge = torch.sparse_coo_tensor(ss_data.edge_index, values, ss_edge_shape)
-
-# H-H G
-hh_edge = np.load('./data/hh_graph.npy')
-hh_edge_adj = hh_edge - 390
-hh_edge_adj = table2mat(hh_edge_adj, 805)
-# hh_edge = hh_edge.tolist()
-# hh_edge_index = torch.tensor(hh_edge, dtype=torch.long) - 390  # 边索引需要减去390
-# hh_x = torch.tensor([[i] for i in range(390, 1195)], dtype=torch.float)
-# hh_data = Data(x=hh_x, edge_index=hh_edge_index.t().contiguous())
-
-# hh_data_adj = SparseTensor(row=hh_data.edge_index[0], col=hh_data.edge_index[1],
-#                            sparse_sizes=(805, 805))
-# x_hh = hh_data.x.shape[0]
-# hh_edge_shape = np.zeros((x_hh, x_hh)).shape
-# values = torch.tensor(np.ones(hh_data.edge_index.shape[1]), dtype=torch.long)
-# hh_edge = torch.sparse_coo_tensor(hh_data.edge_index, values, hh_edge_shape)
-#
-# ss_co = torch.from_numpy(np.load('./ss_pos.npy')).to(device)
-# hh_co = torch.from_numpy(np.load('./hh_pos.npy')).to(device)
-
-# 读取处方数据
-prescript = pd.read_csv('./data/prescript_1195.csv', encoding='utf-8')
-pLen = len(prescript)  # 数据集的数量
-# 症状的one-hot 矩阵
-pS_list = [[0] * 390 for _ in range(pLen)]
-pS_array = np.array(pS_list)
-# 草药的one-hot 矩阵
-pH_list = [[0] * 805 for _ in range(pLen)]
-pH_array = np.array(pH_list)
-
-pS_array = torch.from_numpy(pS_array).to(device).float()
-pH_array = torch.from_numpy(pH_array).to(device).float()
-
-# 迭代数据集， 赋值  ###目前看不懂这里
-for i in range(pLen):
-    j = eval(prescript.iloc[i, 0])
-    pS_array[i, j] = 1
-
-    k = eval(prescript.iloc[i, 1])
-    k = [x - 390 for x in k]
-    pH_array[i, k] = 1
-
-# 读取中草药频率
-# herbCount = load_obj('./data/herbID2count')
-# herbCount = np.array(list(herbCount.values()))
-
-# # 读取KG中知识的独热编码
-# kg_oneHot = np.load('./data/herb_805_27_oneHot.npy')
-# kg_oneHot = torch.from_numpy(kg_oneHot).float()
-para = parameter.para(lr=0.056, rec=1e-4, drop=0.0, batchSize=8192, epoch=500, dev_ratio=0.2, test_ratio=0.2)
-
-print(para.lr, para.rec)
-# para = parameter.para(lr=0.056, rec=1e-4, drop=0.0, batchSize=8192, epoch=500, dev_ratio=0.2, test_ratio=0.2)
-# para = parameter.para(lr=0.05, rec=3e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
-
 path = os.path.abspath(os.path.dirname(__file__))
 type = sys.getfilesystemencoding()
 sys.stdout = Logger('khdr.txt')
+
+para = parameter.para(lr=0.056, rec=1e-4, drop=0.0, batchSize=8192, epoch=500, dev_ratio=0.2, test_ratio=0.2)
+ld = DataLoad(para)
+# para = parameter.para(lr=0.05, rec=3e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
+train_dataset, dev_dataset, test_dataset = ld.GetDataset()
+ss_edge_adj, hh_edge_adj, sh_data = ld.GetIndex()
+x_train, x_dev, x_test = ld.GetSet()
 # print(Lr_auto.params)
 print(time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime()))
 print(" dropout: ", para.drop, " batchsize: ",
       para.batchSize, " epoch: ", para.epoch, " dev_ratio: ", para.dev_ratio, " test_ratio: ", para.test_ratio)
-# 训练集开发集测试集的下标
-p_list = [x for x in range(pLen)]
-x_train, x_dev_test = train_test_split(p_list, test_size=(para.dev_ratio + para.test_ratio), shuffle=False,
-                                       random_state=2021)
-# print(len(x_train), len(x_dev_test))#
-
-x_dev, x_test = train_test_split(x_dev_test, test_size=1 - 0.5, shuffle=False, random_state=2021)
-print("train_size: ", len(x_train), "dev_size: ", len(x_dev), "test_size: ", len(x_test))
-
-train_dataset = presDataset(pS_array[x_train], pH_array[x_train])
-dev_dataset = presDataset(pS_array[x_dev], pH_array[x_dev])
-test_dataset = presDataset(pS_array[x_test], pH_array[x_test])
 
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=para.batchSize)
 dev_loader = torch.utils.data.DataLoader(dev_dataset, batch_size=para.batchSize)
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=para.batchSize)
-# print(len(test_loader))
-
-
-# model = KDHR(390, 805, 1195, 64, params)
-
-
-# model = KDHR(390, 805, 1195, 64)
 
 criterion = torch.nn.BCEWithLogitsLoss(reduction="mean").to(device)
 
@@ -196,12 +88,13 @@ def objective(trial):
             # sid, hid = sid.float().to(device), hid.float().to(device)
             optimizer.zero_grad()
             # batch*805 概率矩阵
-            outputs = model(sh_data.edge_index, ss_edge_adj, hh_edge_adj, sid)
+            outputs = model(sh_data.edge_index, sid)
             # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, sid)
             loss = criterion(outputs, hid) + model.calculate_loss()
             loss = loss.to(device)
             loss.backward()
             optimizer.step()
+            # print(scheduler.get_lr())
             running_loss += loss.item()
         # print train loss per every epoch
         print('[Epoch {}]train_loss: '.format(epoch + 1), running_loss / len(train_loader))
@@ -225,7 +118,7 @@ def objective(trial):
         for tsid, thid in dev_loader:
             # tsid, thid = tsid.float().to(device), thid.float().to(device)
             # batch*805 概率矩阵
-            outputs = model(sh_data.edge_index, ss_edge_adj, hh_edge_adj, tsid)
+            outputs = model(sh_data.edge_index, tsid)
             # outputs = model(sh_edge_index, ss_co, hh_co, tsid)
 
             # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, tsid)
@@ -307,7 +200,7 @@ def objective(trial):
     for tsid, thid in test_loader:
         # tsid, thid = tsid.float(), thid.float()
         # batch*805 概率矩阵
-        outputs = model(sh_data.edge_index, ss_edge, hh_edge, tsid)
+        outputs = model(sh_data.edge_index, tsid)
         # outputs = model(sh_edge_index, ss_co, hh_co, tsid)
 
         test_loss += criterion(outputs, thid).item()
@@ -360,6 +253,8 @@ def objective(trial):
 
     score_f1 = 2 * (test_p20 / len(x_test)) * (test_r20 / len(x_test)) / (
             (test_p20 / len(x_test)) + (test_r20 / len(x_test)))
+    # print(model.g)
+    # DrawPic(model.g)
     return score_f1
 
 
