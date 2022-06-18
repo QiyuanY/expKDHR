@@ -2,11 +2,13 @@
 
 This repository is the implementation of expKDHR:
 
-Multi-layer information fusion based on graph convolutional network(lightGCN) and Contrastive Learning for knowledge-driven herb recommendation
+Multi-layer information fusion based on graph convolutional network(lightGCN) and Multi-view Contrastive Learning herb recommendation
 
 The basic environment is Ubuntu 18.04 so that torch-1.5.0+cu102 can fit our experiment.
 
 The main aim of this experiment:
+
+>rebulid the model and change the parameter
 >Ablation learning
 
 # Required packages
@@ -27,4 +29,4 @@ pandas==1.0.1
 
 sklearn==0.22.1
 
-faiss-gpu==1.7.1
+faiss-gpu==1.7.1(abandoned)
