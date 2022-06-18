@@ -39,18 +39,16 @@ class Logger(object):
 path = os.path.abspath(os.path.dirname(__file__))
 type = sys.getfilesystemencoding()
 sys.stdout = Logger('khdr.txt')
-
-para = parameter.para(lr=0.056, rec=1e-4, drop=0.0, batchSize=8192, epoch=500, dev_ratio=0.2, test_ratio=0.2)
+para = parameter.para(lr=0.056, rec=1e-5, drop=0.0, batchSize=8192, epoch=500, dev_ratio=0.2, test_ratio=0.2)
 ld = DataLoad(para)
-# para = parameter.para(lr=0.05, rec=3e-3, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
-train_dataset, dev_dataset, test_dataset = ld.GetDataset()
-ss_edge_adj, hh_edge_adj, sh_data = ld.GetIndex()
-x_train, x_dev, x_test = ld.GetSet()
-# print(Lr_auto.params)
+
 print(time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime()))
 print(" dropout: ", para.drop, " batchsize: ",
       para.batchSize, " epoch: ", para.epoch, " dev_ratio: ", para.dev_ratio, " test_ratio: ", para.test_ratio)
 
+train_dataset, dev_dataset, test_dataset = ld.GetDataset()
+ss_edge_adj, hh_edge_adj, sh_data = ld.GetIndex()
+x_train, x_dev, x_test = ld.GetSet()
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=para.batchSize)
 dev_loader = torch.utils.data.DataLoader(dev_dataset, batch_size=para.batchSize)
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=para.batchSize)
@@ -63,8 +61,8 @@ epsilon = 1e-13
 
 hh_edge_adj = torch.as_tensor(hh_edge_adj).to(device)
 ss_edge_adj = torch.as_tensor(ss_edge_adj).to(device)
-sh_data.edge_index = sh_data.edge_index.to(device)
-model = KDHR(390, 805, 1195, 64, ss_edge_adj, hh_edge_adj, para.batchSize, para.drop).to(device)
+sh_data = torch.as_tensor(sh_data).to(device)
+model = KDHR(390, 805, 1195, 64, ss_edge_adj, hh_edge_adj, sh_data, para.batchSize, para.drop).to(device)
 
 
 def objective(trial):
@@ -88,7 +86,7 @@ def objective(trial):
             # sid, hid = sid.float().to(device), hid.float().to(device)
             optimizer.zero_grad()
             # batch*805 概率矩阵
-            outputs = model(sh_data.edge_index, sid)
+            outputs = model(sh_data, sid)
             # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, sid)
             loss = criterion(outputs, hid) + model.calculate_loss()
             loss = loss.to(device)
@@ -118,7 +116,7 @@ def objective(trial):
         for tsid, thid in dev_loader:
             # tsid, thid = tsid.float().to(device), thid.float().to(device)
             # batch*805 概率矩阵
-            outputs = model(sh_data.edge_index, tsid)
+            outputs = model(sh_data, tsid)
             # outputs = model(sh_edge_index, ss_co, hh_co, tsid)
 
             # outputs = model(sh_data.x, sh_data_adj, ss_data.x, ss_data_adj, hh_data.x, hh_data_adj, tsid)
@@ -200,7 +198,7 @@ def objective(trial):
     for tsid, thid in test_loader:
         # tsid, thid = tsid.float(), thid.float()
         # batch*805 概率矩阵
-        outputs = model(sh_data.edge_index, tsid)
+        outputs = model(sh_data, tsid)
         # outputs = model(sh_edge_index, ss_co, hh_co, tsid)
 
         test_loss += criterion(outputs, thid).item()

@@ -2,6 +2,7 @@ from utils import *
 from torch_geometric.data import Data
 from load import table2mat
 from sklearn.model_selection import train_test_split
+import math
 
 seed = 2021512
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -21,7 +22,7 @@ class DataLoad(object):
         sh_edge = sh_edge.tolist()
         sh_edge_index = torch.tensor(sh_edge, dtype=torch.long)
         sh_x = torch.tensor([[i] for i in range(1195)], dtype=torch.float)
-        sh_data = Data(x=sh_x, edge_index=sh_edge_index.t().contiguous())  ### 制图
+        sh_data = self.Indexrank(Data(x=sh_x, edge_index=sh_edge_index.t().contiguous()).edge_index)  ### 制图
 
         # S-S G
         ss_edge = np.load('./data/ss_graph.npy')
@@ -31,6 +32,7 @@ class DataLoad(object):
         # H-H G
         hh_edge = np.load('./data/hh_graph.npy')
         hh_edge_adj = hh_edge - 390
+        hh_edge_adj = table2mat(hh_edge_adj, 805)
 
         return ss_edge_adj, hh_edge_adj, sh_data
 
@@ -71,3 +73,11 @@ class DataLoad(object):
         test_dataset = presDataset(pS_array[x_test], pH_array[x_test])
 
         return train_dataset, dev_dataset, test_dataset
+
+    def Indexrank(self, data):
+        data = data.numpy()
+        tmp = data[0, :]
+        for i in range(79870):
+            if tmp[i] < 390:
+                data[0][i], data[1][i] = data[1][i], data[0][i]
+        return data
