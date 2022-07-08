@@ -1,6 +1,6 @@
 # expKDHR
 
-This repository is the implementation of expKDHR:
+This repository is the implementation of NVHR:
 
 Multi-layer information fusion based on graph convolutional network(lightGCN) and Multi-view Contrastive Learning herb recommendation
 
