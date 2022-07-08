@@ -1,4 +1,4 @@
-# expKDHR
+# MVHR
 
 This repository is the implementation of NVHR:
 
