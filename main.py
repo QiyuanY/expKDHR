@@ -39,7 +39,7 @@ class Logger(object):
 path = os.path.abspath(os.path.dirname(__file__))
 type = sys.getfilesystemencoding()
 sys.stdout = Logger('khdr.txt')
-para = parameter.para(lr=0.056, rec=1e-5, drop=0.0, batchSize=8192, epoch=500, dev_ratio=0.2, test_ratio=0.2)
+para = parameter.para(lr=0.056, rec=1e-4, drop=0.0, batchSize=8192, epoch=200, dev_ratio=0.2, test_ratio=0.2)
 ld = DataLoad(para)
 
 print(time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime()))
@@ -47,7 +47,7 @@ print(" dropout: ", para.drop, " batchsize: ",
       para.batchSize, " epoch: ", para.epoch, " dev_ratio: ", para.dev_ratio, " test_ratio: ", para.test_ratio)
 
 train_dataset, dev_dataset, test_dataset = ld.GetDataset()
-ss_edge_adj, hh_edge_adj, sh_data = ld.GetIndex()
+ss_edge_adj, hh_edge_adj, sh_data, sh_data_origin = ld.GetIndex()
 x_train, x_dev, x_test = ld.GetSet()
 train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=para.batchSize)
 dev_loader = torch.utils.data.DataLoader(dev_dataset, batch_size=para.batchSize)
@@ -62,7 +62,14 @@ epsilon = 1e-13
 hh_edge_adj = torch.as_tensor(hh_edge_adj).to(device)
 ss_edge_adj = torch.as_tensor(ss_edge_adj).to(device)
 sh_data = torch.as_tensor(sh_data).to(device)
-model = KDHR(390, 805, 1195, 64, ss_edge_adj, hh_edge_adj, sh_data, para.batchSize, para.drop).to(device)
+sh_data_origin = torch.as_tensor(sh_data_origin).to(device)
+model = KDHR(390, 805, 1195, 64, ss_edge_adj, hh_edge_adj, sh_data, sh_data_origin, para.batchSize, para.drop).to(device)
+
+
+def Target(a, b, c, len):
+    res1, res2, res3 = a / len, b / len, c / len
+
+    return res1, res2, res3
 
 
 def objective(trial):
@@ -77,6 +84,11 @@ def objective(trial):
     optimizer = torch.optim.Adam(model.parameters(), lr=para.lr, weight_decay=para.rec)
 
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.8)
+
+    pre_list = [[], [], []]
+    rec_list = [[], [], []]
+    f1s_list = [[], [], []]
+
     for epoch in range(para.epoch):
 
         model.train()
@@ -101,6 +113,7 @@ def objective(trial):
 
         model.eval()
         dev_loss = 0
+        dev_l = len(x_dev)
 
         dev_p5 = 0
         dev_p10 = 0
@@ -114,7 +127,6 @@ def objective(trial):
         dev_f1_10 = 0
         dev_f1_20 = 0
         for tsid, thid in dev_loader:
-            # tsid, thid = tsid.float().to(device), thid.float().to(device)
             # batch*805 概率矩阵
             outputs = model(sh_data, tsid)
             # outputs = model(sh_edge_index, ss_co, hh_co, tsid)
@@ -157,19 +169,19 @@ def objective(trial):
                 # dev_f1_20 += 2 * (count / 20) * (count / len(trueLabel)) / ((count / 20) + (count / len(trueLabel)) + epsilon)
 
         scheduler.step()
+        dp5, dp10, dp20 = Target(dev_p5, dev_p10, dev_p20, dev_l)
+        dr5, dr10, dr20 = Target(dev_r5, dev_r10, dev_r20, dev_l)
+        df15, df110, df120 = 2 * (dp5 * dr5) / (dp5 + dr5 + epsilon), 2 * (dp10 * dr10) / (dp10 + dr10 + epsilon), 2 * (
+                    dp20 * dr20) / (dp20 + dr20 + epsilon)
+        pre_list[0].append(dp5), pre_list[1].append(dp10), pre_list[2].append(dp20)
+        rec_list[0].append(dr5), pre_list[1].append(dr10), pre_list[2].append(dr20)
+        f1s_list[0].append(df15), f1s_list[1].append(df110), f1s_list[2].append(df120)
 
         print('[Epoch {}]dev_loss: '.format(epoch + 1), dev_loss / len(dev_loader))
         # print('[Epoch {}]dev_loss: '.format(epoch + 1), dev_loss / len(x_dev))
-        print('d:p5-10-20:', dev_p5 / len(x_dev), dev_p10 / len(x_dev), dev_p20 / len(x_dev))
-        print('d:r5-10-20:', dev_r5 / len(x_dev), dev_r10 / len(x_dev), dev_r20 / len(x_dev))
-        # print('f1_5-10-20: ', dev_f1_5 / len(x_dev), dev_f1_10 / len(x_dev), dev_f1_20 / len(x_dev))
-        print('d:f1_5-10-20: ',
-              2 * (dev_p5 / len(x_dev)) * (dev_r5 / len(x_dev)) / (
-                      (dev_p5 / len(x_dev)) + (dev_r5 / len(x_dev)) + epsilon),
-              2 * (dev_p10 / len(x_dev)) * (dev_r10 / len(x_dev)) / (
-                      (dev_p10 / len(x_dev)) + (dev_r10 / len(x_dev)) + epsilon),
-              2 * (dev_p20 / len(x_dev)) * (dev_r20 / len(x_dev)) / (
-                      (dev_p20 / len(x_dev)) + (dev_r20 / len(x_dev)) + epsilon))
+        print('d:p5-10-20:', dp5, dp10, dp20)
+        print('d:r5-10-20:', dr5, dr10, dr20)
+        print('d:f1_5-10-20:', df15, df110, df120)
 
         early_stopping(dev_loss / len(dev_loader), model)
         if early_stopping.early_stop:
@@ -182,6 +194,7 @@ def objective(trial):
 
     model.eval()
     test_loss = 0
+    test_l = len(x_test)
 
     test_p5 = 0
     test_p10 = 0
@@ -233,26 +246,25 @@ def objective(trial):
             test_p20 += count / 20
             test_r20 += count / len(trueLabel)
 
+    tp5, tp10, tp20 = Target(test_p5, test_p10, test_p20, test_l)
+    tr5, tr10, tr20 = Target(test_r5, test_r10, test_r20, test_l)
+    tf15, tf110, tf120 = 2 * (tp5 * tr5) / (tp5 + tr5 + epsilon), 2 * (tp10 * tr10) / (tp10 + tr10 + epsilon), 2 * (
+            tp20 * tr20) / (tp20 + tr20 + epsilon)
     print("----------------------------------------------------------------------------------------------------")
 
     print('test_loss: ', test_loss / len(test_loader))
 
-    print('p5-10-20:', test_p5 / len(x_test), test_p10 / len(x_test), test_p20 / len(x_test))
-    print('r5-10-20:', test_r5 / len(x_test), test_r10 / len(x_test), test_r20 / len(x_test))
-
-    score_f1 = []
-
-    print('f1_5-10-20: ',
-          2 * (test_p5 / len(x_test)) * (test_r5 / len(x_test)) / ((test_p5 / len(x_test)) + (test_r5 / len(x_test))),
-          2 * (test_p10 / len(x_test)) * (test_r10 / len(x_test)) / (
-                  (test_p10 / len(x_test)) + (test_r10 / len(x_test))),
-          2 * (test_p20 / len(x_test)) * (test_r20 / len(x_test)) / (
-                  (test_p20 / len(x_test)) + (test_r20 / len(x_test))))
+    print('p5-10-20:', tp5, tp10, tp20)
+    print('r5-10-20:', tr5, tr10, tr20)
+    print('f1_5-10-20:', tf15, tf110, tf120)
 
     score_f1 = 2 * (test_p20 / len(x_test)) * (test_r20 / len(x_test)) / (
             (test_p20 / len(x_test)) + (test_r20 / len(x_test)))
-    # print(model.g)
-    # DrawPic(model.g)
+
+    # Drawpic(para.epoch, pre_list[0], pre_list[1], pre_list[2], 'pre')
+    # Drawpic(para.epoch, rec_list[0], rec_list[1], rec_list[2], 'rec')
+    # Drawpic(para.epoch, f1s_list[0], f1s_list[1], f1s_list[2], 'f1s')
+
     return score_f1
 
 

@@ -23,6 +23,7 @@ class DataLoad(object):
         sh_edge_index = torch.tensor(sh_edge, dtype=torch.long)
         sh_x = torch.tensor([[i] for i in range(1195)], dtype=torch.float)
         sh_data = self.Indexrank(Data(x=sh_x, edge_index=sh_edge_index.t().contiguous()).edge_index)  ### 制图
+        sh_data_origin = Data(x=sh_x, edge_index=sh_edge_index.t().contiguous()).edge_index
 
         # S-S G
         ss_edge = np.load('./data/ss_graph.npy')
@@ -34,7 +35,7 @@ class DataLoad(object):
         hh_edge_adj = hh_edge - 390
         hh_edge_adj = table2mat(hh_edge_adj, 805)
 
-        return ss_edge_adj, hh_edge_adj, sh_data
+        return ss_edge_adj, hh_edge_adj, sh_data, sh_data_origin
 
     def GetSet(self):
         train, dev_test = train_test_split(self.data, test_size=(self.para.dev_ratio + self.para.test_ratio),

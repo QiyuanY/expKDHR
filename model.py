@@ -13,12 +13,12 @@ from reckit import randint_choice
 import scipy.sparse as sp
 from load import mat2table
 
-seed = 2021
-np.random.seed(seed)
-if torch.cuda.is_available():
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-torch.manual_seed(seed)
+seed = 20220711
+# np.random.seed(seed)
+# if torch.cuda.is_available():
+#     torch.cuda.manual_seed(seed)
+#     torch.cuda.manual_seed_all(seed)
+# torch.manual_seed(seed)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -69,7 +69,7 @@ def sp_mat_to_sp_tensor(sp_mat):
 
 
 class KDHR(torch.nn.Module):
-    def __init__(self, ss_num, hh_num, sh_num, embedding_dim, edge_matrix_1, edge_matrix_2, edge_index, batchSize,
+    def __init__(self, ss_num, hh_num, sh_num, embedding_dim, edge_matrix_1, edge_matrix_2, edge_index, edge_index_origin, batchSize,
                  drop):
         super(KDHR, self).__init__()
         # if trail:
@@ -96,13 +96,14 @@ class KDHR(torch.nn.Module):
 
         self.ssl_temp = 0.5
         self.ssl_reg = 1e-6
-        self.ssl_ratio = 0.5
-        self.mask_1 = 200
-        self.mask_2 = 150
+        self.ssl_reg1 = 0.05
+        self.ssl_ratio = 0.25  # 目前0.25效果比较好
+        self.mask_1 = 150
+        self.mask_2 = 80
         self.alpha = 1.5
         self.latent_dim = 64
-        self.k = 20
-        self.k_1 = 9
+        # self.k = 20
+        # self.k_1 = 9
         self.proto_reg = 8e-8
         self.con_reg = 0.1
         self.device = device
@@ -130,6 +131,7 @@ class KDHR(torch.nn.Module):
         self.edge_i = edge_matrix_2
 
         self.edge_index = edge_index
+        self.edge_index_origin = edge_index_origin
 
         # S-H 图所需的网络
         # S
@@ -165,7 +167,10 @@ class KDHR(torch.nn.Module):
 
         # edge_drop
         self.total_g = self.edge_index
-        self.sub_g1, self.sub_g2 = torch.as_tensor(self.SGL(), device=device)
+        self.total_g_origin = self.edge_index_origin
+        # self.sub_g1, self.sub_g2 = torch.as_tensor(self.SGL(), device=device)
+        self.sub_g1, self.sub_g2 = [], []
+
 
     def forward(self, edge_index_SH, prescription):
         # S-H图搭建
@@ -173,47 +178,72 @@ class KDHR(torch.nn.Module):
 
         x_SH1 = self.SH_embedding(l).to(device)
         # 第一层
-        x_SH2 = self.convSH_TostudyS_1(x_SH1.float(), self.total_g)
+        x_SH2 = self.convSH_TostudyS_1(x_SH1.float(), self.total_g_origin)
         # 第二层
-        x_SH6 = self.convSH_TostudyS_2(x_SH2, self.total_g)
+        x_SH6 = self.convSH_TostudyS_2(x_SH2, self.total_g_origin)
 
-        SH_g1 = self.SH_embedding(l).to(device)
-        # 第一层
-        SH_g2 = self.convSH_TostudyS_1(SH_g1.float(), self.sub_g1)
-        # 第二层
-        SH_g3 = self.convSH_TostudyS_2(SH_g2, self.sub_g1)
+        x_SH9 = (x_SH1 + x_SH2 + x_SH6) / 3.0
+        x_SH9 = self.SH_mlp_1(x_SH9)
+        x_SH9 = x_SH9.view(1195, -1)
+        x_SH9 = self.SH_bn_1(x_SH9)
+        x_SH9 = self.SH_tanh_1(x_SH9)
+        #
+        # self.c_embedding_1, self.c_embedding_0 = x_SH9[:390], x_SH9[390:]
 
-        SH_g11 = self.SH_embedding(l).to(device)
-        # 第一层
-        SH_g22 = self.convSH_TostudyS_1(SH_g11.float(), self.sub_g2)
-        # 第二层
-        SH_g33 = self.convSH_TostudyS_2(SH_g22, self.sub_g2)
-
+        # # drop 子图1
+        # SH_g1 = self.SH_embedding(l).to(device)
+        # # 第一层
+        # SH_g2 = self.convSH_TostudyS_1(SH_g1.float(), self.sub_g1)
+        # # 第二层
+        # SH_g3 = self.convSH_TostudyS_2(SH_g2, self.sub_g1)
+        #
+        # # drop 子图2
+        # SH_g11 = self.SH_embedding(l).to(device)
+        # # 第一层
+        # SH_g22 = self.convSH_TostudyS_1(SH_g11.float(), self.sub_g2)
+        # # 第二层
+        # SH_g33 = self.convSH_TostudyS_2(SH_g22, self.sub_g2)
+        #
         self.p_embedding_0, self.p_embedding_1 = torch.split(x_SH1, [805, 390])
-        self.c_embedding_0, self.c_embedding_1 = torch.split(x_SH6, [805, 390])
+        self.c_embedding_0, self.c_embedding_1 = torch.split(x_SH9, [805, 390])
+        # es = x_SH9[:390]
+        # eh = x_SH9[390:]
 
-        self.g1_emb0, self.g1_emb1 = torch.split(SH_g3, [805, 390])
 
-        self.g2_emb0, self.g2_emb1 = torch.split(SH_g33, [805, 390])
+        # self.g1_emb0, self.g1_emb1 = torch.split(SH_g3, [805, 390])
+        #
+        # self.g2_emb0, self.g2_emb1 = torch.split(SH_g33, [805, 390])
 
         # sum操作
         _, s_i, s_u = self.ssl_layer_loss()
-        # _, n_u, n_i = self.ProtoNCE_loss()
-        # _, n_i, n_u = self.high_loss()
-        _, n_i, n_u = self.sgl_loss()
         self.ssl_u = s_u
-        self.nce_u = n_u
         self.ssl_i = s_i
-        self.nce_i = n_i
-        _, c_u, c_i = self.Same2Loss()
+        # _, n_u, n_i = self.ProtoNCE_loss()
+        _, h_u, h_i = self.high_loss()
+        # _, n_i, n_u = self.sgl_loss()
+
+        self.nce_u = h_u
+        # self.sgl_u = n_u
+
+        self.nce_i = h_i
+        # self.sgl_i = n_i
+
+        # _, c_u, c_i = self.Same2Loss()
+
+        # self.con_u = c_u
+        # self.con_i = c_i
 
         # n_i:805 n_u:390
-        # es = torch.as_tensor(s_u + n_u, device=device)
-        # eh = torch.as_tensor(s_i + n_i, device=device)
-
+        # es:390, eh:805
+        # es = torch.as_tensor(n_u + s_u, device=device)
+        # eh = torch.as_tensor(n_i + s_i, device=device)
+        es = h_u
+        eh = h_i
+        # es = self.c_embedding_1
+        # eh = self.c_embedding_0
         # SI 集成多个症状为一个症状表示 batch*390 390*dim => batch*dim
+        es = es.view(390, -1)
         # es = es.view(390, -1)
-        es = c_u.view(390, -1)
         e_synd = torch.mm(prescription, es)  # prescription * es
         # batch*1
         preSum = prescription.sum(dim=1).view(-1, 1)
@@ -224,9 +254,7 @@ class KDHR(torch.nn.Module):
         e_synd_norm = self.SI_bn(e_synd_norm)
         e_synd_norm = self.relu(e_synd_norm)  # batch*dim
         # batch*dim dim*805 => batch*805
-        eh = c_i.view(805, -1)
-        # eh = eh.view(805, -1)
-
+        eh = eh.view(805, -1)
         pre = torch.mm(e_synd_norm, eh.t())
         return pre
 
@@ -403,14 +431,19 @@ class KDHR(torch.nn.Module):
         """
         h_index = np.nonzero(self.edge_i)
         s_index = np.nonzero(self.edge_u)
-
-        return s_index[0], s_index[1], h_index[0], h_index[1]
+        return s_index[:,0], s_index[:,1], h_index[:,0], h_index[:,1]
 
     def Same2Loss(self):
         same_loss_user, _, __ = self.SameContrast(self.ssl_u, self.nce_u, self.edge_u)
         same_loss_item, _, __ = self.SameContrast(self.ssl_i, self.nce_i, self.edge_i)
         user = torch.as_tensor(self.ssl_u + self.nce_u)
         item = torch.as_tensor(self.ssl_i + self.nce_i)
+        # same_loss_user, _, __ = self.SameContrast(self.c_embedding_1, self.c_embedding_1, self.edge_u)
+        # same_loss_item, _, __ = self.SameContrast(self.c_embedding_0, self.c_embedding_0, self.edge_i)
+        # user = torch.as_tensor(self.c_embedding_1)
+        # item = torch.as_tensor(self.c_embedding_0)
+        # user = torch.as_tensor(self.ssl_u + self.nce_u)
+        # item = torch.as_tensor(self.ssl_i + self.nce_i)
         return self.con_reg * torch.as_tensor(same_loss_user + same_loss_item), user, item
 
     def calculate_loss(self):
@@ -418,12 +451,12 @@ class KDHR(torch.nn.Module):
 
         :return: ssl + high
         """
-        ssl_loss, self.ssl_i, self.ssl_u = self.ssl_layer_loss()
+        ssl_loss, self.ssl_u, self.ssl_i = self.ssl_layer_loss()
         print(ssl_loss)
-        sgl_loss, self.sgl_u, self.sgl_i = self.sgl_loss()
-        print(sgl_loss)
-        # high_loss, self.nce_u, self.nce_i = self.high_loss()
-        # print(high_loss)
+        # sgl_loss, self.sgl_u, self.sgl_i = self.sgl_loss()
+        # print(sgl_loss)
+        high_loss, self.nce_u, self.nce_i = self.high_loss()
+        print(high_loss)
         # nce_loss, self.nce_u, self.nce_i = self.ProtoNCE_loss()
         # print(nce_loss)
         # contrast_loss = self.con_reg * torch.as_tensor(self.con_i + self.con_u, device=device).float()
@@ -432,7 +465,7 @@ class KDHR(torch.nn.Module):
 
         # return nce_loss + con_loss
 
-        return ssl_loss + sgl_loss
+        return ssl_loss + high_loss
 
     def Norm(self, emb, dim=0, n_dim=0):
         """
@@ -454,10 +487,12 @@ class KDHR(torch.nn.Module):
         """
         model = 'high'
         index_1, index_2, index_3, index_4 = self.findID()
-        user_norm = self.Norm(self.c_embedding_0, dim=805, n_dim=0)
-        item_norm = self.Norm(self.c_embedding_1, dim=390, n_dim=1)
-        user_emb1, user_emb2 = user_norm[index_1], user_norm[index_2]
-        item_emb1, item_emb2 = item_norm[index_3], item_norm[index_4]
+        user_norm = self.Norm(self.ssl_u, dim=805, n_dim=0)
+        item_norm = self.Norm(self.ssl_i, dim=390, n_dim=1)
+        # user_norm = self.Norm(self.ssl_i, dim=805, n_dim=0)
+        # item_norm = self.Norm(self.ssl_u, dim=390, n_dim=1)
+        user_emb1, user_emb2 = user_norm[index_3], user_norm[index_4]
+        item_emb1, item_emb2 = item_norm[index_1], item_norm[index_2]
 
         ssl_loss_user = self.con_loss(user_emb1, user_emb2, user_norm, model=model)
         ssl_loss_item = self.con_loss(item_emb1, item_emb2, item_norm, model=model)
@@ -490,7 +525,7 @@ class KDHR(torch.nn.Module):
         # 转回numpy格式
         t1 = np.array(srt)
         # 取出频率高于200的索引
-        t1 = t1[np.where(t1[:, 1] > 200)][:, 0]
+        t1 = t1[np.where(t1[:, 1] > self.mask_1)][:, 0]
         temp = []
         ttemp = []
         for i in range(79870):
@@ -505,7 +540,7 @@ class KDHR(torch.nn.Module):
         srt = srt.reset_index()
         # srt = srt.reset_index()
         t2 = np.array(srt)
-        t2 = t2[np.where(t2[:, 1] > 100)][:, 0]
+        t2 = t2[np.where(t2[:, 1] > self.mask_2)][:, 0]
         for i in range(len(temp)):
             if temp[i][1] in t2:
                 ttemp.append((temp[i][0], temp[i][1]))
@@ -523,7 +558,7 @@ class KDHR(torch.nn.Module):
         length = len(ttemp)
         ttemp = ttemp + total
         result = np.array(ttemp)
-        result = result.reshape([2,79870])
+        result = result.reshape([2, 79870])
 
         users_np, items_np = result[0, :], result[1, :]
         # users_np, items_np = users_items[0, :], users_items[1, :]
@@ -537,6 +572,5 @@ class KDHR(torch.nn.Module):
                 adj_matrix = np.vstack((user_np, item_np))
         else:
             adj_matrix = np.vstack((users_np, items_np))
-
 
         return adj_matrix

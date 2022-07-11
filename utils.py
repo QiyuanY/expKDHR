@@ -9,6 +9,8 @@ import random
 import torch
 from torch_geometric.data import Data
 from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+import time
 
 seed = 2021
 np.random.seed(seed)
@@ -35,3 +37,19 @@ class presDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.pH_array.shape[0]
+
+
+def Drawpic(epoch, data1, data2, data3, para):
+
+    x = range(epoch)
+    plt.plot(x, data1, color='blue', label='precision')
+    plt.plot(x, data2, color='green', label='recall')
+    plt.plot(x, data3, color='red', label = 'f1score')
+
+    plt.legend()
+    plt.title(para)
+    plt.xlabel('epoch')
+    plt.ylabel('rate')
+    plt.savefig('res_{}.png'.format(time.strftime("%Y%m%d_%H%M%S")))
+
+
