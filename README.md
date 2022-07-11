@@ -1,6 +1,6 @@
-# expKDHR
+# MVHR
 
-This repository is the implementation of expKDHR:
+This repository is the implementation of NVHR:
 
 Multi-layer information fusion based on graph convolutional network(lightGCN) and Multi-view Contrastive Learning herb recommendation
 
@@ -8,7 +8,8 @@ The basic environment is Ubuntu 18.04 so that torch-1.5.0+cu102 can fit our expe
 
 The main aim of this experiment:
 
->rebulid the model and change the parameter
+>change the parameter
+>
 >Ablation learning
 
 # Required packages
