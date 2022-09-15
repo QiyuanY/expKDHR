@@ -1,6 +1,6 @@
 # MVHR
 
-This repository is the implementation of NVHR:
+This repository is the implementation of MVHR:
 
 Multi-layer information fusion based on graph convolutional network(lightGCN) and Multi-view Contrastive Learning herb recommendation
 
